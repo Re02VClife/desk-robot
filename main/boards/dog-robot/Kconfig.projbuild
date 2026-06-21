@@ -1,0 +1,13 @@
+menu "Dog Robot Configuration"
+    choice BOARD_TYPE_DOG_ROBOT
+        prompt "Dog Robot Board Type"
+        default BOARD_TYPE_DOG_ROBOT
+        help
+            Select the dog robot board type
+
+        config BOARD_TYPE_DOG_ROBOT
+            bool "Dog Robot"
+            help
+                Dog robot with 4 SG90 servos
+    endchoice
+endmenu

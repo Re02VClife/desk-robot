@@ -1,0 +1,11 @@
+{
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "xiaozhi-custom",
+            "sdkconfig_append": [
+                "CONFIG_LCD_ST7789_240X320=y"
+            ]
+        }
+    ]
+}

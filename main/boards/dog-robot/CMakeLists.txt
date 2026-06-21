@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "dog_robot.cc"
+        "dog_robot_board.cc"
+        "oscillator.cc"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        driver
+        esp_timer
+        mcp_server
+        wifi_board
+        audio_codec
+        display
+        led
+        backlight
+)
