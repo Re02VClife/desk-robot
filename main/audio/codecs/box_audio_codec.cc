@@ -109,7 +109,9 @@ void BoxAudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_
         .clk_cfg = {
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
             .ext_clk_freq_hz = 0,
+#endif
             .mclk_multiple = I2S_MCLK_MULTIPLE_256
         },
         .slot_cfg = {
@@ -120,9 +122,11 @@ void BoxAudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_
             .ws_width = I2S_DATA_BIT_WIDTH_16BIT,
             .ws_pol = false,
             .bit_shift = true,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
             .left_align = true,
             .big_endian = false,
-            .bit_order_lsb = false
+            .bit_order_lsb = false,
+#endif
         },
         .gpio_cfg = {
             .mclk = mclk,
@@ -138,6 +142,7 @@ void BoxAudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_
         }
     };
 
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
     i2s_tdm_config_t tdm_cfg = {
         .clk_cfg = {
             .sample_rate_hz = (uint32_t)input_sample_rate_,
@@ -173,9 +178,15 @@ void BoxAudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_
             }
         }
     };
+#endif
 
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 0)
     ESP_ERROR_CHECK(i2s_channel_init_tdm_mode(rx_handle_, &tdm_cfg));
+#else
+    // ESP-IDF v5.5 移除了 TDM 模式，RX 通道也使用 STD 模式
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle_, &std_cfg));
+#endif
     ESP_ERROR_CHECK(i2s_channel_enable(tx_handle_));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle_));
     ESP_LOGI(TAG, "Duplex channels created");
