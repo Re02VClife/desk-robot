@@ -13,6 +13,9 @@
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
 #include <driver/i2c_master.h>
+#include <driver/uart.h>
+#include "mcp_server.h"
+#include "assets/lang_config.h"
 
 #define TAG "XiaozhiCustomBoard"
 
@@ -98,13 +101,19 @@ private:
         });
 
         volume_up_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            app.SetVolume(app.GetVolume() + 10);
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() + 10;
+            if (volume > 100) volume = 100;
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
         });
 
         volume_down_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            app.SetVolume(app.GetVolume() - 10);
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() - 10;
+            if (volume < 0) volume = 0;
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
         });
     }
 
@@ -119,6 +128,74 @@ private:
         );
     }
 
+    // ========== 机械臂 UART1 通信 ==========
+
+    // 初始化 UART1（连接机械臂驱动板）
+    void InitializeRobotUart() {
+        uart_config_t uart_cfg = {
+            .baud_rate = ROBOT_ARM_UART_BAUD_RATE,
+            .data_bits = UART_DATA_8_BITS,
+            .parity    = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+            .source_clk = UART_SCLK_DEFAULT,
+        };
+        ESP_ERROR_CHECK(uart_driver_install(ROBOT_ARM_UART_PORT, ROBOT_ARM_UART_BUF_SIZE * 2, 0, 0, NULL, 0));
+        ESP_ERROR_CHECK(uart_param_config(ROBOT_ARM_UART_PORT, &uart_cfg));
+        ESP_ERROR_CHECK(uart_set_pin(ROBOT_ARM_UART_PORT, ROBOT_ARM_UART_TXD_PIN, ROBOT_ARM_UART_RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+        ESP_LOGI(TAG, "机械臂 UART1 初始化完成: TX=IO%d, RX=IO%d, %d bps", ROBOT_ARM_UART_TXD_PIN, ROBOT_ARM_UART_RXD_PIN, ROBOT_ARM_UART_BAUD_RATE);
+    }
+
+    // 发送 JSON 指令到机械臂驱动板（以换行符结尾）
+    void SendRobotCommand(const std::string& json_cmd) {
+        std::string msg = json_cmd + "\n";
+        int written = uart_write_bytes(ROBOT_ARM_UART_PORT, msg.c_str(), msg.size());
+        ESP_LOGI(TAG, "发送机械臂指令: %s (%d 字节)", json_cmd.c_str(), written);
+    }
+
+    // 注册机械臂 MCP 工具
+    void InitializeRobotTools() {
+        auto& mcp = McpServer::GetInstance();
+
+        mcp.AddTool("robot.arm.move_joints",
+            "控制机械臂6个关节的角度。angles为6个元素的JSON数组（度），speed为速度百分比（1-100）。",
+            PropertyList({
+                Property("angles", kPropertyTypeString),
+                Property("speed", kPropertyTypeInteger, 50, 1, 100)
+            }),
+            [this](const PropertyList& props) -> ReturnValue {
+                auto angles_str = props["angles"].value<std::string>();
+                int speed = props["speed"].value<int>();
+                std::string cmd = "{\"cmd\":\"move_joints\",\"angles\":" + angles_str + ",\"speed\":" + std::to_string(speed) + "}";
+                SendRobotCommand(cmd);
+                return std::string("{\"status\":\"ok\"}");
+            });
+
+        mcp.AddTool("robot.arm.gripper",
+            "控制夹爪开合。open=true为张开，open=false为闭合。speed为速度百分比（1-100）。",
+            PropertyList({
+                Property("open", kPropertyTypeBoolean),
+                Property("speed", kPropertyTypeInteger, 50, 1, 100)
+            }),
+            [this](const PropertyList& props) -> ReturnValue {
+                bool open = props["open"].value<bool>();
+                int speed = props["speed"].value<int>();
+                std::string cmd = "{\"cmd\":\"gripper\",\"open\":" + std::string(open ? "true" : "false") + ",\"speed\":" + std::to_string(speed) + "}";
+                SendRobotCommand(cmd);
+                return std::string("{\"status\":\"ok\"}");
+            });
+
+        mcp.AddTool("robot.arm.get_status",
+            "获取机械臂当前状态（关节角度、夹爪状态等）。",
+            PropertyList(),
+            [this](const PropertyList& props) -> ReturnValue {
+                SendRobotCommand("{\"cmd\":\"get_status\"}");
+                return std::string("{\"status\":\"pending\"}");
+            });
+
+        ESP_LOGI(TAG, "机械臂 MCP 工具注册完成（3个工具）");
+    }
+
 public:
     XiaozhiCustomBoard()
         : boot_button_(BOOT_BUTTON_GPIO)
@@ -130,6 +207,8 @@ public:
         InitializeLcdDisplay();
         InitializeButtons();
         InitializeBatteryMonitor();
+        InitializeRobotUart();     // 初始化机械臂 UART1
+        InitializeRobotTools();    // 注册机械臂 MCP 工具
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
             GetBacklight()->RestoreBrightness();
         }

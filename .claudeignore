@@ -1,0 +1,59 @@
+# ==============================================================
+# Claude Code 忽略文件 — 排除构建产物、依赖、生成文件和大体积目录
+# 目的：让 Claude 只关注项目源代码，减少无关上下文消耗
+# ==============================================================
+
+# ----- 构建产物 (355MB+) -----
+build/
+dist/
+releases/
+
+# ----- 下载的依赖组件 (648MB+) -----
+managed_components/
+
+# ----- 生成的代码 -----
+main/assets/lang_config.h
+mmap_generate_*.h
+*.bin
+
+# ----- SDK 配置（生成的，非手写）-----
+sdkconfig
+sdkconfig.old
+dependencies.lock
+
+# ----- IDE 与工具配置 -----
+.vscode/
+.devcontainer/
+.claude/
+.clangd
+.clang-format
+
+# ----- 操作系统杂项 -----
+.DS_Store
+*.pyc
+__pycache__/
+.cache/
+
+# ----- 环境变量 -----
+.env
+
+# ----- 测试缓存 -----
+tests/__pycache__/
+tests/.pytest_cache/
+.pytest_cache/
+
+# ----- Claude 计划文件（运行时生成）-----
+.claude/plans/
+
+# ----- ESP-IDF 编译中间文件 -----
+*.elf
+*.map
+*.o
+*.a
+*.so
+*.enet
+
+# ----- 固件烧录文件 -----
+*.bin
+*.elf
+*.hex
