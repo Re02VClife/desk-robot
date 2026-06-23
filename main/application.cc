@@ -166,7 +166,7 @@ void Application::Run() {
     // Set the priority of the main task to 10
     vTaskPrioritySet(nullptr, 10);
 
-    const EventBits_t ALL_EVENTS = 
+    const EventBits_t ALL_EVENTS =
         MAIN_EVENT_SCHEDULE |
         MAIN_EVENT_SEND_AUDIO |
         MAIN_EVENT_WAKE_WORD_DETECTED |
@@ -179,7 +179,8 @@ void Application::Run() {
         MAIN_EVENT_START_LISTENING |
         MAIN_EVENT_STOP_LISTENING |
         MAIN_EVENT_ACTIVATION_DONE |
-        MAIN_EVENT_STATE_CHANGED;
+        MAIN_EVENT_STATE_CHANGED |
+        MAIN_EVENT_TEXT_INPUT;
 
     while (true) {
         auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
@@ -217,6 +218,11 @@ void Application::Run() {
             HandleStopListeningEvent();
         }
 
+        if (bits & MAIN_EVENT_TEXT_INPUT) {
+            auto text = std::move(pending_text_input_);
+            HandleTextInputEvent(text);
+        }
+
         if (bits & MAIN_EVENT_SEND_AUDIO) {
             while (auto packet = audio_service_.PopPacketFromSendQueue()) {
                 if (protocol_ && !protocol_->SendAudio(std::move(packet))) {
@@ -249,7 +255,17 @@ void Application::Run() {
             clock_ticks_++;
             auto display = Board::GetInstance().GetDisplay();
             display->UpdateStatusBar();
-        
+
+            // 文字输入超时检查（每秒一次）
+            if (text_timeout_tick_ > 0 && clock_ticks_ >= text_timeout_tick_) {
+                text_timeout_tick_ = 0;
+                if (GetDeviceState() == kDeviceStateConnecting) {
+                    ESP_LOGW(TAG, "文字输入超时——服务器未响应");
+                    display->SetChatMessage("system", "服务器无响应，请确认后端已适配 type:text");
+                    SetDeviceState(kDeviceStateIdle);
+                }
+            }
+
             // Print debug info every 10 seconds
             if (clock_ticks_ % 10 == 0) {
                 SystemInfo::PrintHeapStats();
@@ -855,6 +871,10 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
 void Application::HandleStateChangedEvent() {
     DeviceState new_state = state_machine_.GetState();
     clock_ticks_ = 0;
+    // 如果状态从 connecting 切换到其他（服务器有响应），清除文字输入超时
+    if (new_state != kDeviceStateConnecting) {
+        text_timeout_tick_ = 0;
+    }
 
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
@@ -1104,6 +1124,72 @@ void Application::SetAecMode(AecMode mode) {
 
 void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
+}
+
+void Application::SendTextInput(const std::string& text) {
+    // Store text and signal main event loop (thread-safe, can be called from console task)
+    pending_text_input_ = text;
+    xEventGroupSetBits(event_group_, MAIN_EVENT_TEXT_INPUT);
+}
+
+void Application::HandleTextInputEvent(const std::string& text) {
+    if (text.empty()) {
+        return;
+    }
+    if (!protocol_) {
+        ESP_LOGE(TAG, "Protocol not initialized, cannot send text");
+        return;
+    }
+
+    auto state = GetDeviceState();
+    ESP_LOGI(TAG, "Text input: %s (state: %d)", text.c_str(), (int)state);
+
+    // 立即在屏幕上显示用户消息
+    auto display = Board::GetInstance().GetDisplay();
+    display->SetChatMessage("user", text.c_str());
+
+    // 设置超时：15 秒后若仍在 connecting 状态，提示服务器未响应
+    text_timeout_tick_ = clock_ticks_ + 15;
+
+    // 根据当前状态决定如何发送文字
+    if (state == kDeviceStateIdle) {
+        // 空闲状态：需要先打开通道再发送
+        if (!protocol_->IsAudioChannelOpened()) {
+            SetDeviceState(kDeviceStateConnecting);
+            Schedule([this, text]() {
+                if (!protocol_->IsAudioChannelOpened()) {
+                    if (!protocol_->OpenAudioChannel()) {
+                        return;
+                    }
+                }
+                // 通道打开后发送文字，服务器的 TTS 响应会驱动状态转换
+                protocol_->SendTextInput(text);
+            });
+            return;
+        }
+        // 通道已打开，直接发送
+        protocol_->SendTextInput(text);
+    } else if (state == kDeviceStateSpeaking) {
+        // 正在播放语音：打断当前播放，发送新文字
+        AbortSpeaking(kAbortReasonNone);
+        protocol_->SendTextInput(text);
+    } else if (state == kDeviceStateListening) {
+        // 正在聆听：直接发送文字
+        protocol_->SendTextInput(text);
+    } else if (state == kDeviceStateActivating) {
+        // 激活中：取消激活，切回空闲后发送
+        SetDeviceState(kDeviceStateIdle);
+        Schedule([this, text]() {
+            if (!protocol_->IsAudioChannelOpened()) {
+                if (!protocol_->OpenAudioChannel()) {
+                    return;
+                }
+            }
+            protocol_->SendTextInput(text);
+        });
+    } else {
+        ESP_LOGW(TAG, "Cannot send text in current state: %d", (int)state);
+    }
 }
 
 void Application::ResetProtocol() {

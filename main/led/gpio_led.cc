@@ -91,7 +91,7 @@ GpioLed::GpioLed(gpio_num_t gpio, int output_invert, ledc_timer_t timer_num, led
 GpioLed::~GpioLed() {
     esp_timer_stop(blink_timer_);
     if (ledc_initialized_) {
-        ledc_fade_stop(ledc_channel_.speed_mode, ledc_channel_.channel);
+        // ledc_fade_stop 在 ESP-IDF v5.5 中已移除，ledc_fade_func_uninstall 会清理 fade 状态
         ledc_fade_func_uninstall();
     }
 }
@@ -112,7 +112,7 @@ void GpioLed::TurnOn() {
 
     std::lock_guard<std::mutex> lock(mutex_);
     esp_timer_stop(blink_timer_);
-    ledc_fade_stop(ledc_channel_.speed_mode, ledc_channel_.channel);
+    // ledc_fade_stop 在 ESP-IDF v5.5 中已移除，后续 ledc_set_duty/ledc_fade_start 会覆盖当前状态
     ledc_set_duty(ledc_channel_.speed_mode, ledc_channel_.channel, duty_);
     ledc_update_duty(ledc_channel_.speed_mode, ledc_channel_.channel);
 }
@@ -124,7 +124,7 @@ void GpioLed::TurnOff() {
 
     std::lock_guard<std::mutex> lock(mutex_);
     esp_timer_stop(blink_timer_);
-    ledc_fade_stop(ledc_channel_.speed_mode, ledc_channel_.channel);
+    // ledc_fade_stop 在 ESP-IDF v5.5 中已移除，后续 ledc_set_duty/ledc_fade_start 会覆盖当前状态
     ledc_set_duty(ledc_channel_.speed_mode, ledc_channel_.channel, 0);
     ledc_update_duty(ledc_channel_.speed_mode, ledc_channel_.channel);
 }
@@ -148,7 +148,7 @@ void GpioLed::StartBlinkTask(int times, int interval_ms) {
 
     std::lock_guard<std::mutex> lock(mutex_);
     esp_timer_stop(blink_timer_);
-    ledc_fade_stop(ledc_channel_.speed_mode, ledc_channel_.channel);
+    // ledc_fade_stop 在 ESP-IDF v5.5 中已移除，后续 ledc_set_duty/ledc_fade_start 会覆盖当前状态
 
     blink_counter_ = times * 2;
     blink_interval_ms_ = interval_ms;
@@ -177,7 +177,7 @@ void GpioLed::StartFadeTask() {
 
     std::lock_guard<std::mutex> lock(mutex_);
     esp_timer_stop(blink_timer_);
-    ledc_fade_stop(ledc_channel_.speed_mode, ledc_channel_.channel);
+    // ledc_fade_stop 在 ESP-IDF v5.5 中已移除，后续 ledc_set_duty/ledc_fade_start 会覆盖当前状态
     fade_up_ = true;
     ledc_set_fade_with_time(ledc_channel_.speed_mode,
                             ledc_channel_.channel, LEDC_DUTY, LEDC_FADE_TIME);

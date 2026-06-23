@@ -15,6 +15,7 @@
 #include <driver/i2c_master.h>
 #include <driver/uart.h>
 #include "mcp_server.h"
+#include "assets/lang_config.h"
 
 #define TAG "XiaozhiCustomBoard"
 
@@ -100,13 +101,19 @@ private:
         });
 
         volume_up_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            app.SetVolume(app.GetVolume() + 10);
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() + 10;
+            if (volume > 100) volume = 100;
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
         });
 
         volume_down_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            app.SetVolume(app.GetVolume() - 10);
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() - 10;
+            if (volume < 0) volume = 0;
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
         });
     }
 

@@ -86,12 +86,11 @@ bool WebsocketProtocol::OpenAudioChannel() {
     std::string token = settings.GetString("token");
     int version = settings.GetInt("version");
 
-#if CONFIG_WEBSOCKET_URL_OVERRIDE
+    // CONFIG_WEBSOCKET_URL_OVERRIDE 是 string 类型 Kconfig，空字符串表示未配置
     if (strlen(CONFIG_WEBSOCKET_URL_OVERRIDE) > 0) {
         url = CONFIG_WEBSOCKET_URL_OVERRIDE;
         ESP_LOGI(TAG, "使用编译时指定的 WebSocket 地址: %s", url);
     }
-#endif
 
     if (version != 0) {
         version_ = version;
