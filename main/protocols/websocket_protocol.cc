@@ -85,6 +85,14 @@ bool WebsocketProtocol::OpenAudioChannel() {
     std::string url = settings.GetString("url");
     std::string token = settings.GetString("token");
     int version = settings.GetInt("version");
+
+#if CONFIG_WEBSOCKET_URL_OVERRIDE
+    if (strlen(CONFIG_WEBSOCKET_URL_OVERRIDE) > 0) {
+        url = CONFIG_WEBSOCKET_URL_OVERRIDE;
+        ESP_LOGI(TAG, "使用编译时指定的 WebSocket 地址: %s", url);
+    }
+#endif
+
     if (version != 0) {
         version_ = version;
     }
