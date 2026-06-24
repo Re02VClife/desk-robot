@@ -4,17 +4,73 @@
 
 ---
 
+工作流：根据当前项目文件做适当调整
+
+
+### 第一步：搭建高内聚低耦合的工程目录
+
+项目开发前先完成目录骨架规划，所有代码按职责拆分到独立模块，禁止单文件堆砌全部功能。
+
+标准项目目录结构
+
+plaintext
+
+```Plain
+project/
+├── specs/             # 功能点规格说明文档（Spec）
+├── core/              # 核心工具函数（低耦合，与业务逻辑无关）
+├── features/          # 业务功能模块（高内聚，单个文件对应单个功能）
+├── tests/             # 测试用例（功能验收检查点）
+└── progress.md        # 进度记录板（记录每次改动，同步项目进度）
+```
+
+> 规范要求：新增业务代码必须放入 `features/` 目录，单个文件仅对应一个功能点，严禁多功能混写。
+
+### 第二步：起草《项目行动手册》（Agent 系统提示词）
+
+在 plan 模式下完成需求对齐后，在 `specs/` 目录下生成 项目行动手册.md，作为 Agent 的执行总纲领。
+
+#### 给 Claude Code 的初始部署指令
+
+plaintext
+
+```Plain
+我们现在开始推进一个项目，请参考 specs/ 目录下的 .md 文档，
+按以下 5 条原则系统性地推进：
+1. 单点职责：每个功能点写在 features/ 目录下的独立文件中，先读取 specs/ 下的需求再编写代码。
+2. 原子化产出：每次只推进 1 个功能点，完成后写入 progress.md 标记为「已完成」，再进入下一个功能点。
+3. 检查点（Checkpoint）：写完一个功能点的代码后，必须立刻在 tests/ 目录下编写对应的单元测试代码（或执行指定验证逻辑），以测试通过作为功能验收标准。
+4. 反馈循环（Feedback Loop）：编写完测试后，在终端执行测试命令。若测试失败，阅读报错信息、自我反思并修复代码，再次运行测试，直至测试通过。
+5. 任务熔断：如果同一个功能点经过 3 次自我修复后测试仍不通过，停止循环并向我求助，禁止强行跳过。
+```
+
+#### 标准执行行动链
+
+1. 读取 `specs/` 目录文档，明确第一个功能点需求
+2. 在 `features/` 目录下编写对应功能代码
+3. 在 `tests/` 目录下编写配套单元测试代码
+4. 自动在终端执行测试命令（示例：`pytest tests/test_func1.py`）
+5. 观察测试结果；若失败则立刻定位问题并修改代码
+6. 重新执行测试命令，直至测试通过
+7. 测试通过后，在 `progress.md` 中更新进度；读取下一个功能点需求，开启新一轮循环
+
+> 启动确认：若无疑问，从第 1 个功能点开始执行。
+>
+
+
+
+
 ## 1. 总体进度概览
 
-| 阶段 | 内容 | 状态 | 完成度 |
-|------|------|------|--------|
-| **Phase 0** | ESP-IDF v5.5.3 编译适配 + 固件烧录验证 | ✅ 完成 | 100% |
-| **Phase 1** | 硬件接线 + ESP32 端 UART 驱动 + MCP 工具 | 🔄 进行中 | ~85% |
-| **Phase 1.5** | 🆕 文字消息交互（串口 + 服务器适配） | ✅ 完成 | 100% |
-| **Phase 2** | 部署 OpenClaw + 语音对话 + 语音控制机械臂 | 🔄 服务器端完成 | ~75% |
-| **Phase 3** | 部署 smolVLA-0.5B + 视觉抓取推理 | 🔲 未开始（需 GPU） | 0% |
-| **Phase 4** | 端到端语音抓取联调 + 异常处理 | 🔲 未开始 | 0% |
-| **仿真/微调** | LeRobot 遥操作数据采集 + LoRA 微调 | 🔲 未开始（可选） | 0% |
+| 阶段                | 内容                                      | 状态                | 完成度 |
+| ------------------- | ----------------------------------------- | ------------------- | ------ |
+| **Phase 0**   | ESP-IDF v5.5.3 编译适配 + 固件烧录验证    | ✅ 完成             | 100%   |
+| **Phase 1**   | 硬件接线 + ESP32 端 UART 驱动 + MCP 工具  | 🔄 进行中           | ~85%   |
+| **Phase 1.5** | 🆕 文字消息交互（串口 + 服务器适配）      | ✅ 完成             | 100%   |
+| **Phase 2**   | 部署 OpenClaw + 语音对话 + 语音控制机械臂 | 🔄 服务器端完成     | ~75%   |
+| **Phase 3**   | 部署 smolVLA-0.5B + 视觉抓取推理          | 🔲 未开始（需 GPU） | 0%     |
+| **Phase 4**   | 端到端语音抓取联调 + 异常处理             | 🔲 未开始           | 0%     |
+| **仿真/微调** | LeRobot 遥操作数据采集 + LoRA 微调        | 🔲 未开始（可选）   | 0%     |
 
 **整体进度：约 45%**（Phase 0~1.5 完成，Phase 2 服务器端全链路通）
 
@@ -28,27 +84,27 @@
 
 ### ESP32 端改动
 
-| 文件 | 改动说明 |
-|------|----------|
-| [protocol.h:76](main/protocols/protocol.h#L76) | 新增 `SendTextInput()` 公开虚方法 |
-| [protocol.cc:81-91](main/protocols/protocol.cc#L81) | 实现：用 cJSON 构建 `{"type":"text","text":"..."}` 消息 |
-| [application.h:34](main/application.h#L34) | 新增 `MAIN_EVENT_TEXT_INPUT` 事件位 (1<<13) |
-| [application.h:112](main/application.h#L112) | 新增 `SendTextInput()` 公开方法（线程安全） |
-| [application.h:152](main/application.h#L152) | 新增 `HandleTextInputEvent()` 处理器声明 |
-| [application.cc:183](main/application.cc#L183) | 事件循环加入 TEXT_INPUT 监听 |
-| [application.cc:1121-1177](main/application.cc#L1121) | `HandleTextInputEvent` 实现：按设备状态智能路由 + 15s 超时检测 |
-| **新建** [text_console.h](main/text_console.h) | 文字控制台头文件 |
-| **新建** [text_console.cc](main/text_console.cc) | FreeRTOS 任务：`getchar()` 逐字读取 + 回显 + 退格，回车发送 |
-| [CMakeLists.txt:40](main/CMakeLists.txt#L40) | 添加 `text_console.cc` |
-| [main.cc:24](main/main.cc#L24) | `TextConsole::Start()` 启动控制台 |
+| 文件                                                | 改动说明                                                         |
+| --------------------------------------------------- | ---------------------------------------------------------------- |
+| [protocol.h:76](main/protocols/protocol.h#L76)         | 新增`SendTextInput()` 公开虚方法                               |
+| [protocol.cc:81-91](main/protocols/protocol.cc#L81)    | 实现：用 cJSON 构建`{"type":"text","text":"..."}` 消息         |
+| [application.h:34](main/application.h#L34)             | 新增`MAIN_EVENT_TEXT_INPUT` 事件位 (1<<13)                     |
+| [application.h:112](main/application.h#L112)           | 新增`SendTextInput()` 公开方法（线程安全）                     |
+| [application.h:152](main/application.h#L152)           | 新增`HandleTextInputEvent()` 处理器声明                        |
+| [application.cc:183](main/application.cc#L183)         | 事件循环加入 TEXT_INPUT 监听                                     |
+| [application.cc:1121-1177](main/application.cc#L1121)  | `HandleTextInputEvent` 实现：按设备状态智能路由 + 15s 超时检测 |
+| **新建** [text_console.h](main/text_console.h)   | 文字控制台头文件                                                 |
+| **新建** [text_console.cc](main/text_console.cc) | FreeRTOS 任务：`getchar()` 逐字读取 + 回显 + 退格，回车发送    |
+| [CMakeLists.txt:40](main/CMakeLists.txt#L40)           | 添加`text_console.cc`                                          |
+| [main.cc:24](main/main.cc#L24)                         | `TextConsole::Start()` 启动控制台                              |
 
 ### OpenClaw 服务器端改动
 
-| 文件 | 改动说明 |
-|------|----------|
-| [textMessageType.py:9](c:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server\core\handle\textMessageType.py#L9) | 新增 `TEXT = "text"` 消息类型枚举 |
-| **新建** [textInputMessageHandler.py](c:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server\core\handle\textHandler\textInputMessageHandler.py) | 文字消息处理器：收到文字 → `enqueue_asr_report` + `startToChat` |
-| [textMessageHandlerRegistry.py:8,29](c:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server\core\handle\textMessageHandlerRegistry.py#L8,L29) | 导入并注册 `TextInputMessageHandler` |
+| 文件                                                                                                                                                 | 改动说明                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [textMessageType.py:9](c:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server\core\handle\textMessageType.py#L9)                                       | 新增`TEXT = "text"` 消息类型枚举                                  |
+| **新建** [textInputMessageHandler.py](c:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server\core\handle\textHandler\textInputMessageHandler.py) | 文字消息处理器：收到文字 →`enqueue_asr_report` + `startToChat` |
+| [textMessageHandlerRegistry.py:8,29](c:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server\core\handle\textMessageHandlerRegistry.py#L8,L29)          | 导入并注册`TextInputMessageHandler`                               |
 
 ### 数据流
 
@@ -77,6 +133,7 @@
 ### 🚀 未来可选：飞书 Bot 接入
 
 架构已设计好（见讨论），关键代码为 `feishu_handler.py`，需要：
+
 1. 飞书开放平台创建 Bot + 订阅 `im.message.receive_v1` 事件
 2. OpenClaw 服务器新增 `/feishu/callback` HTTP 端点
 3. 飞书消息 → LLM → TTS → 双路回复（飞书文字 + ESP32 语音）
@@ -89,71 +146,71 @@
 
 #### 固件层
 
-| 模块 | 文件 | 说明 |
-|------|------|------|
-| UART1 驱动 | [xiaozhi_custom_board.cc:127](main/boards/xiaozhi-custom/xiaozhi_custom_board.cc#L127) | IO9(TX)→驱动板 RX, IO10(RX)←驱动板 TX, 115200bps |
-| 机械臂 MCP 工具 | [xiaozhi_custom_board.cc:150](main/boards/xiaozhi-custom/xiaozhi_custom_board.cc#L150) | `robot.arm.move_joints`、`robot.arm.gripper`、`robot.arm.get_status` 三个工具 |
-| WebSocket 地址覆盖 | [Kconfig.projbuild:915](main/Kconfig.projbuild#L915) | Kconfig `CONFIG_WEBSOCKET_URL_OVERRIDE`，编译期覆盖 OTA 下发的 WS 地址 |
-| WebSocket 地址读取 | [websocket_protocol.cc:89](main/protocols/websocket_protocol.cc#L89) | `#if CONFIG_WEBSOCKET_URL_OVERRIDE` 优先使用自建服务器地址 |
-| UART 引脚配置 | [config.h:75](main/boards/xiaozhi-custom/config.h#L75) | `ROBOT_ARM_UART_TXD_PIN=GPIO_NUM_9`, `ROBOT_ARM_UART_RXD_PIN=GPIO_NUM_10` |
-| 分区表 | [partitions/v2/16m.csv](partitions/v2/16m.csv) | 双 OTA (各 4MB) + 8MB SPIFFS assets |
-| 板卡选项 | [Kconfig.projbuild:133](main/Kconfig.projbuild#L133) | `BOARD_TYPE_XIAOZHI_CUSTOM`，仅限 ESP32-S3 |
-| 板级初始化 | [xiaozhi_custom_board.cc:197](main/boards/xiaozhi-custom/xiaozhi_custom_board.cc#L197) | 构造函数中自动初始化 UART + 注册 MCP 工具 |
-| 🆕 文字控制台 | 见上文 Phase 1.5 | 串口输入文字 → 直接与 AI 对话 |
+| 模块               | 文件                                                                                | 说明                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| UART1 驱动         | [xiaozhi_custom_board.cc:127](main/boards/xiaozhi-custom/xiaozhi_custom_board.cc#L127) | IO9(TX)→驱动板 RX, IO10(RX)←驱动板 TX, 115200bps                                  |
+| 机械臂 MCP 工具    | [xiaozhi_custom_board.cc:150](main/boards/xiaozhi-custom/xiaozhi_custom_board.cc#L150) | `robot.arm.move_joints`、`robot.arm.gripper`、`robot.arm.get_status` 三个工具 |
+| WebSocket 地址覆盖 | [Kconfig.projbuild:915](main/Kconfig.projbuild#L915)                                   | Kconfig`CONFIG_WEBSOCKET_URL_OVERRIDE`，编译期覆盖 OTA 下发的 WS 地址             |
+| WebSocket 地址读取 | [websocket_protocol.cc:89](main/protocols/websocket_protocol.cc#L89)                   | `#if CONFIG_WEBSOCKET_URL_OVERRIDE` 优先使用自建服务器地址                        |
+| UART 引脚配置      | [config.h:75](main/boards/xiaozhi-custom/config.h#L75)                                 | `ROBOT_ARM_UART_TXD_PIN=GPIO_NUM_9`, `ROBOT_ARM_UART_RXD_PIN=GPIO_NUM_10`       |
+| 分区表             | [partitions/v2/16m.csv](partitions/v2/16m.csv)                                         | 双 OTA (各 4MB) + 8MB SPIFFS assets                                                 |
+| 板卡选项           | [Kconfig.projbuild:133](main/Kconfig.projbuild#L133)                                   | `BOARD_TYPE_XIAOZHI_CUSTOM`，仅限 ESP32-S3                                        |
+| 板级初始化         | [xiaozhi_custom_board.cc:197](main/boards/xiaozhi-custom/xiaozhi_custom_board.cc#L197) | 构造函数中自动初始化 UART + 注册 MCP 工具                                           |
+| 🆕 文字控制台      | 见上文 Phase 1.5                                                                    | 串口输入文字 → 直接与 AI 对话                                                      |
 
 #### 文档
 
-| 文件 | 说明 |
-|------|------|
-| [机械臂VLA集成方案.md](../../机械臂VLA集成方案.md) | 完整技术方案（674行），含架构、模型选型、微调流程 |
+| 文件                                                                      | 说明                                                  |
+| ------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [机械臂VLA集成方案.md](../../机械臂VLA集成方案.md)                           | 完整技术方案（674行），含架构、模型选型、微调流程     |
 | [main/boards/xiaozhi-custom/README.md](main/boards/xiaozhi-custom/README.md) | 板级说明（386行），含引脚映射、编译烧录、MCP 工具用法 |
-| 🆕 [SERVER_CHANGES.md](main/text_console/SERVER_CHANGES.md) | 服务器端文字消息适配方案 |
+| 🆕[SERVER_CHANGES.md](main/text_console/SERVER_CHANGES.md)                   | 服务器端文字消息适配方案                              |
 
 #### 项目整理
 
-| 提交 | 说明 |
-|------|------|
-| `05ff1b9` | 移除所有非 ESP32-S3 板子支持 |
-| `f3c5202` | 清理非 S3 相关文件（文档、分区表、sdkconfig） |
-| `32c0d0e` | feat: 添加机械臂VLA集成支持 |
-| `c3f96f3` | docs: 添加小智自定义板机械臂VLA集成README |
+| 提交         | 说明                                          |
+| ------------ | --------------------------------------------- |
+| `05ff1b9`  | 移除所有非 ESP32-S3 板子支持                  |
+| `f3c5202`  | 清理非 S3 相关文件（文档、分区表、sdkconfig） |
+| `32c0d0e`  | feat: 添加机械臂VLA集成支持                   |
+| `c3f96f3`  | docs: 添加小智自定义板机械臂VLA集成README     |
 | *(待提交)* | feat: 添加串口文字控制台 + 服务器文字消息适配 |
 
 ### 3.1.1 Phase 0：ESP-IDF v5.5.3 编译适配（已完成）
 
 > 原项目基于旧版 ESP-IDF 开发，升级到 v5.5.3 后产生大量 API 不兼容错误。
 
-| 轮次 | 文件 | 问题 | 修复方式 |
-|------|------|------|----------|
-| 第1轮 | `websocket_protocol.cc` | `#if ""` 无效预处理 | 改为运行时 `strlen()` 检查 |
-| 第1轮 | `gpio_led.cc` | `ledc_fade_stop` 已移除（5处） | 删除调用 |
-| 第1轮 | `image_to_jpeg.cpp` | `esp_imgfx_color_convert.h` 仅 P4 有 | 加 `#if CONFIG_XIAOZHI_ENABLE_HARDWARE_JPEG_ENCODER` 守卫 |
-| 第1轮 | `es8388_audio_codec.cc` | `ext_clk_freq_hz` 字段移除 | `#if ESP_IDF_VERSION < 5.5.0` |
-| 第2轮 | `es8388_audio_codec.cc` | `left_align` / `big_endian` / `bit_order_lsb` 移除 | 版本守卫 |
-| 第2轮 | `es8389_audio_codec.cc` | 同上 3 字段 | 版本守卫 |
-| 第2轮 | `box_audio_codec.cc` | 4 字段 + TDM 模式移除 | v5.5 回退到 STD 模式 |
-| 第2轮 | `image_to_jpeg.cpp` | RGB 转换块未守卫 | 包入 `#if` 守卫 |
-| 第2轮 | 新增 `main/uart_uhci.h` | UART UHCI DMA 驱动移除 | 桩头文件 |
-| 第2轮 | 新增 `main/uart_eth_modem.h` | esp_eth_modem 组件移除 | 桩头文件 |
-| 第2轮 | `nt26_board.cc` | 缺 `esp_event.h` / `esp_netif.h` | 显式 include |
-| 第3轮 | `image_to_jpeg.h` | V4L2 依赖 | 改用 `esp_new_jpeg` 原生类型 |
-| 第3轮 | `image_to_jpeg.cpp` | V4L2 类型未定义 | 全局替换 `JPEG_PIXEL_FORMAT_*` |
-| 第3轮 | `lvgl_display.cc` | 调用方仍用旧常量 | 常量替换 |
-| 环境 | `idf.py` | MSYS 检测后不调用 `main()` | 添加 `main()` 调用 |
-| 环境 | `idf_tools.py` | MSYS 检测后 `fatal()` 退出 | 改为 `print()` 警告 |
+| 轮次  | 文件                          | 问题                                                     | 修复方式                                                   |
+| ----- | ----------------------------- | -------------------------------------------------------- | ---------------------------------------------------------- |
+| 第1轮 | `websocket_protocol.cc`     | `#if ""` 无效预处理                                    | 改为运行时`strlen()` 检查                                |
+| 第1轮 | `gpio_led.cc`               | `ledc_fade_stop` 已移除（5处）                         | 删除调用                                                   |
+| 第1轮 | `image_to_jpeg.cpp`         | `esp_imgfx_color_convert.h` 仅 P4 有                   | 加`#if CONFIG_XIAOZHI_ENABLE_HARDWARE_JPEG_ENCODER` 守卫 |
+| 第1轮 | `es8388_audio_codec.cc`     | `ext_clk_freq_hz` 字段移除                             | `#if ESP_IDF_VERSION < 5.5.0`                            |
+| 第2轮 | `es8388_audio_codec.cc`     | `left_align` / `big_endian` / `bit_order_lsb` 移除 | 版本守卫                                                   |
+| 第2轮 | `es8389_audio_codec.cc`     | 同上 3 字段                                              | 版本守卫                                                   |
+| 第2轮 | `box_audio_codec.cc`        | 4 字段 + TDM 模式移除                                    | v5.5 回退到 STD 模式                                       |
+| 第2轮 | `image_to_jpeg.cpp`         | RGB 转换块未守卫                                         | 包入`#if` 守卫                                           |
+| 第2轮 | 新增`main/uart_uhci.h`      | UART UHCI DMA 驱动移除                                   | 桩头文件                                                   |
+| 第2轮 | 新增`main/uart_eth_modem.h` | esp_eth_modem 组件移除                                   | 桩头文件                                                   |
+| 第2轮 | `nt26_board.cc`             | 缺`esp_event.h` / `esp_netif.h`                      | 显式 include                                               |
+| 第3轮 | `image_to_jpeg.h`           | V4L2 依赖                                                | 改用`esp_new_jpeg` 原生类型                              |
+| 第3轮 | `image_to_jpeg.cpp`         | V4L2 类型未定义                                          | 全局替换`JPEG_PIXEL_FORMAT_*`                            |
+| 第3轮 | `lvgl_display.cc`           | 调用方仍用旧常量                                         | 常量替换                                                   |
+| 环境  | `idf.py`                    | MSYS 检测后不调用`main()`                              | 添加`main()` 调用                                        |
+| 环境  | `idf_tools.py`              | MSYS 检测后`fatal()` 退出                              | 改为`print()` 警告                                       |
 
 **编译结果：✅ 2184/2184 目标，0 错误，0 警告**
 
 ### 3.2 🔲 Phase 1 待完成
 
-| 任务 | 说明 | 优先级 |
-|------|------|--------|
-| **文字消息端到端测试** | ✅ 已完成：阿里百炼 deepseek-v4-flash + EdgeTTS 全链路通 | ✅ |
-| **烧录最新固件** | 含文字控制台的新固件（`feature/robot-arm-vla` 分支最新提交） | 🔴 |
-| **硬件接线验证** | 用杜邦线连接 ESP32 IO9/IO10 ↔ SO101 驱动板串口 | 🔴 阻塞 |
-| **UART 通信验证** | 从 PC 通过 WiFi 发送 MCP 指令 → ESP32 → UART → 机械臂实际动作 | 🔴 阻塞 |
-| **IO9/IO10 与 IO17/IO18 不一致** | 方案文档写的是 IO17/IO18，实际代码用 IO9/IO10，需确认并统一文档 | 🟡 文档 |
-| **camera.take_photo 验证** | 确认 ESP32 摄像头 MCP 工具已实现并可正常拍照 | 🟡 |
+| 任务                                   | 说明                                                             | 优先级  |
+| -------------------------------------- | ---------------------------------------------------------------- | ------- |
+| **文字消息端到端测试**           | ✅ 已完成：阿里百炼 deepseek-v4-flash + EdgeTTS 全链路通         | ✅      |
+| **烧录最新固件**                 | 含文字控制台的新固件（`feature/robot-arm-vla` 分支最新提交）   | 🔴      |
+| **硬件接线验证**                 | 用杜邦线连接 ESP32 IO9/IO10 ↔ SO101 驱动板串口                  | 🔴 阻塞 |
+| **UART 通信验证**                | 从 PC 通过 WiFi 发送 MCP 指令 → ESP32 → UART → 机械臂实际动作 | 🔴 阻塞 |
+| **IO9/IO10 与 IO17/IO18 不一致** | 方案文档写的是 IO17/IO18，实际代码用 IO9/IO10，需确认并统一文档  | 🟡 文档 |
+| **camera.take_photo 验证**       | 确认 ESP32 摄像头 MCP 工具已实现并可正常拍照                     | 🟡      |
 
 ### 3.3 ⚠️ 已知问题
 
@@ -173,19 +230,20 @@
 
 #### 任务清单
 
-| 序号 | 任务 | 状态 | 备注 |
-|------|------|------|------|
-| 2.1 | 准备服务器 | ✅ | Windows 本地 PC（Python venv 直跑） |
-| 2.2 | 部署 OpenClaw 后端 | ✅ | venv + 全部依赖 + ffmpeg |
-| 2.3 | 配置 LLM + TTS | ✅ | 阿里百炼 deepseek-v4-flash + EdgeTTS |
-| 2.4 | 编译固件 WS URL 覆盖 | ✅ | 2090目标0错误，待烧录 |
-| 2.5 | 修改 OTA URL | — | 并入 2.4 |
-| 2.6 | 文字消息适配 | ✅ | ESP32 text_console + 服务器 handler |
-| 2.7 | 测试基础文字对话 | ✅ | WebSocket 端到端全链路通 |
-| 2.8 | 角色提示词配置 | ✅ | 含 6 关节映射 + 安全规则 |
-| 2.9 | 测试控臂 | 🔲 | 需完成固件烧录 + 硬件接线 |
+| 序号 | 任务                 | 状态 | 备注                                 |
+| ---- | -------------------- | ---- | ------------------------------------ |
+| 2.1  | 准备服务器           | ✅   | Windows 本地 PC（Python venv 直跑）  |
+| 2.2  | 部署 OpenClaw 后端   | ✅   | venv + 全部依赖 + ffmpeg             |
+| 2.3  | 配置 LLM + TTS       | ✅   | 阿里百炼 deepseek-v4-flash + EdgeTTS |
+| 2.4  | 编译固件 WS URL 覆盖 | ✅   | 2090目标0错误，待烧录                |
+| 2.5  | 修改 OTA URL         | —   | 并入 2.4                             |
+| 2.6  | 文字消息适配         | ✅   | ESP32 text_console + 服务器 handler  |
+| 2.7  | 测试基础文字对话     | ✅   | WebSocket 端到端全链路通             |
+| 2.8  | 角色提示词配置       | ✅   | 含 6 关节映射 + 安全规则             |
+| 2.9  | 测试控臂             | 🔲   | 需完成固件烧录 + 硬件接线            |
 
 **启动服务器**（CMD）：
+
 ```cmd
 set PATH=C:\Users\24628\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-full_build\bin;%PATH%
 cd C:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server
@@ -208,14 +266,14 @@ venv\Scripts\python.exe app.py
 
 #### 任务清单
 
-| 序号 | 任务 | 预估耗时 | 依赖 |
-|------|------|----------|------|
-| 3.1 | 准备 GPU 服务器（本地或云端）| — | — |
-| 3.2 | Clone smolVLA + 安装依赖：`pip install -e .` | 1小时 | 3.1 |
-| 3.3 | 编写 FastAPI 推理服务 `vla_server.py`（方案文档 6.3 节已有模板）| 2小时 | 3.2 |
-| 3.4 | 下载 smolVLA-0.5B 预训练权重并测试推理 | 1小时 | 3.3 |
-| 3.5 | OpenClaw 后端增加 VLA 调用逻辑（拍照 → HTTP 调 VLA 服务 → 下发关节指令）| 4小时 | 3.4 + Phase2 |
-| 3.6 | 端到端验证：拍照 → VLA 推理 → 机械臂执行（先用简单指令如"抓取红色方块"）| 3小时 | 3.5 |
+| 序号 | 任务                                                                       | 预估耗时 | 依赖         |
+| ---- | -------------------------------------------------------------------------- | -------- | ------------ |
+| 3.1  | 准备 GPU 服务器（本地或云端）                                              | —       | —           |
+| 3.2  | Clone smolVLA + 安装依赖：`pip install -e .`                             | 1小时    | 3.1          |
+| 3.3  | 编写 FastAPI 推理服务`vla_server.py`（方案文档 6.3 节已有模板）          | 2小时    | 3.2          |
+| 3.4  | 下载 smolVLA-0.5B 预训练权重并测试推理                                     | 1小时    | 3.3          |
+| 3.5  | OpenClaw 后端增加 VLA 调用逻辑（拍照 → HTTP 调 VLA 服务 → 下发关节指令） | 4小时    | 3.4 + Phase2 |
+| 3.6  | 端到端验证：拍照 → VLA 推理 → 机械臂执行（先用简单指令如"抓取红色方块"） | 3小时    | 3.5          |
 
 **验证标准**：静态场景下，VLA 模型根据照片生成合理的关节角度序列。
 
@@ -227,13 +285,13 @@ venv\Scripts\python.exe app.py
 
 #### 任务清单
 
-| 序号 | 任务 | 预估耗时 | 依赖 |
-|------|------|----------|------|
-| 4.1 | LLM 意图解析 - 从自然语言到具体抓取指令的映射 | 3小时 | Phase2 + Phase3 |
-| 4.2 | 多轮交互：用户说"左边那个"→ 拍照确认 → 执行抓取 | 3小时 | 4.1 |
-| 4.3 | 异常处理：抓取失败重试、物体不可见提示、安全限位 | 3小时 | 4.1 |
-| 4.4 | 全链路时延优化（当前预估 3-5 秒/次） | 2小时 | 4.2 |
-| 4.5 | 多场景抓取测试（10+ 种物体，每种 10 次）| 4小时 | 4.3 |
+| 序号 | 任务                                              | 预估耗时 | 依赖            |
+| ---- | ------------------------------------------------- | -------- | --------------- |
+| 4.1  | LLM 意图解析 - 从自然语言到具体抓取指令的映射     | 3小时    | Phase2 + Phase3 |
+| 4.2  | 多轮交互：用户说"左边那个"→ 拍照确认 → 执行抓取 | 3小时    | 4.1             |
+| 4.3  | 异常处理：抓取失败重试、物体不可见提示、安全限位  | 3小时    | 4.1             |
+| 4.4  | 全链路时延优化（当前预估 3-5 秒/次）              | 2小时    | 4.2             |
+| 4.5  | 多场景抓取测试（10+ 种物体，每种 10 次）          | 4小时    | 4.3             |
 
 **验证标准**：对 10 种日常物体，端到端抓取成功率 ≥ 70%。
 
@@ -245,19 +303,19 @@ venv\Scripts\python.exe app.py
 
 ### 5.1 LeRobot 仿真验证
 
-| 任务 | 说明 |
-|------|------|
-| 安装 LeRobot 仿真 | `pip install "lerobot[simulation]"` |
+| 任务                   | 说明                                   |
+| ---------------------- | -------------------------------------- |
+| 安装 LeRobot 仿真      | `pip install "lerobot[simulation]"`  |
 | 加载 SO101 MuJoCo 环境 | 在仿真中运行默认 smolVLA，观察抓取效果 |
-| 评估基线成功率 | 在仿真中跑 100 条抓取指令，记录成功率 |
+| 评估基线成功率         | 在仿真中跑 100 条抓取指令，记录成功率  |
 
 ### 5.2 数据采集与微调
 
-| 任务 | 说明 | 硬件需求 |
-|------|------|----------|
-| 遥操作录制 | SpaceMouse 控制 SO101 录制 50 条示范数据 | SpaceMouse（约 300 元） |
-| LoRA 微调 | `python train.py --use_lora`（~10MB adapter 权重） | 4-6GB 显存 GPU |
-| 微调效果评估 | 对比微调前后抓取成功率（预期：默认 81% → 微调后 90%+） | — |
+| 任务         | 说明                                                    | 硬件需求                |
+| ------------ | ------------------------------------------------------- | ----------------------- |
+| 遥操作录制   | SpaceMouse 控制 SO101 录制 50 条示范数据                | SpaceMouse（约 300 元） |
+| LoRA 微调    | `python train.py --use_lora`（~10MB adapter 权重）    | 4-6GB 显存 GPU          |
+| 微调效果评估 | 对比微调前后抓取成功率（预期：默认 81% → 微调后 90%+） | —                      |
 
 ---
 
@@ -265,31 +323,31 @@ venv\Scripts\python.exe app.py
 
 ### 6.1 编译环境搭建总结
 
-| 步骤 | 说明 | 状态 |
-|------|------|------|
-| ESP-IDF v5.5.3 环境 | 位于 `E:\esp\Espressif\frameworks\esp-idf-v5.5.3\` | ✅ |
-| 工具链 esp-14.2.0_20251107 | xtensa-esp-elf + riscv32-esp-elf | ✅ |
-| Python 环境 | idf5.5_py3.11_env, Python 3.11.2 | ✅ |
-| MSYS2 兼容修复 | idf.py + idf_tools.py MSYS 检测绕过 | ✅ |
-| 12 文件 API 迁移 | ESP-IDF v5.5.3 不兼容 API 修复 | ✅ |
-| sdkconfig 切换 | BREAD_COMPACT_WIFI → XIAOZHI_CUSTOM + ST7789 | ✅ |
-| xiaozhi_custom_board.cc | 音量 API 修复（SetVolume→SetOutputVolume） | ✅ |
-| 🆕 文字控制台 | 串口 getchar 读取 + 协议层 SendTextInput + 应用层路由 | ✅ |
+| 步骤                       | 说明                                                  | 状态 |
+| -------------------------- | ----------------------------------------------------- | ---- |
+| ESP-IDF v5.5.3 环境        | 位于`E:\esp\Espressif\frameworks\esp-idf-v5.5.3\`   | ✅   |
+| 工具链 esp-14.2.0_20251107 | xtensa-esp-elf + riscv32-esp-elf                      | ✅   |
+| Python 环境                | idf5.5_py3.11_env, Python 3.11.2                      | ✅   |
+| MSYS2 兼容修复             | idf.py + idf_tools.py MSYS 检测绕过                   | ✅   |
+| 12 文件 API 迁移           | ESP-IDF v5.5.3 不兼容 API 修复                        | ✅   |
+| sdkconfig 切换             | BREAD_COMPACT_WIFI → XIAOZHI_CUSTOM + ST7789         | ✅   |
+| xiaozhi_custom_board.cc    | 音量 API 修复（SetVolume→SetOutputVolume）           | ✅   |
+| 🆕 文字控制台              | 串口 getchar 读取 + 协议层 SendTextInput + 应用层路由 | ✅   |
 
 ### 6.2 面包板固件首次验证（2026-06-23）
 
 > 使用 `bread-compact-wifi` 板子类型进行首次烧录验证
 
-| 验证项 | 预期 | 实际 | 结果 |
-|--------|------|------|------|
-| 芯片启动 | ESP-ROM 启动信息 | ✅ `ESP-ROM:esp32s3-20210327` | ✅ |
-| PSRAM | 8MB OPI PSRAM | ✅ 8MB @ 80MHz | ✅ |
-| Flash | QIO 16MB | ✅ detected chip: generic, flash io: qio | ✅ |
-| CPU 频率 | 240MHz | ✅ `cpu freq: 240000000 Hz` | ✅ |
-| WiFi | 配网模式启动 | ✅ 热点 `Xiaozhi-FDAD` 创建成功 | ✅ |
-| MCP 工具 | 7 个工具注册 | ✅ lamp/audio/system/reboot/assets | ✅ |
-| 音频服务 | AudioService 启动 | ✅ 16000→24000 重采样 | ✅ |
-| OLED 显示 | SSD1306 I2C | ❌ `i2c transaction failed` — 引脚不匹配 | ❌ |
+| 验证项    | 预期              | 实际                                       | 结果 |
+| --------- | ----------------- | ------------------------------------------ | ---- |
+| 芯片启动  | ESP-ROM 启动信息  | ✅`ESP-ROM:esp32s3-20210327`             | ✅   |
+| PSRAM     | 8MB OPI PSRAM     | ✅ 8MB @ 80MHz                             | ✅   |
+| Flash     | QIO 16MB          | ✅ detected chip: generic, flash io: qio   | ✅   |
+| CPU 频率  | 240MHz            | ✅`cpu freq: 240000000 Hz`               | ✅   |
+| WiFi      | 配网模式启动      | ✅ 热点`Xiaozhi-FDAD` 创建成功           | ✅   |
+| MCP 工具  | 7 个工具注册      | ✅ lamp/audio/system/reboot/assets         | ✅   |
+| 音频服务  | AudioService 启动 | ✅ 16000→24000 重采样                     | ✅   |
+| OLED 显示 | SSD1306 I2C       | ❌`i2c transaction failed` — 引脚不匹配 | ❌   |
 
 ### 6.3 xiaozhi-custom 固件编译（2026-06-23）
 
@@ -321,6 +379,7 @@ python -m esptool --chip esp32s3 -p COM6 -b 460800 \
 > ⚠️ **重要**：烧录前用杜邦线将 **IO0 接到 GND** → 按 RST → 拔掉 IO0-GND，强制进入下载模式。
 
 **烧录后立即测试文字对话**：
+
 1. 确认 OpenClaw 服务器已重启（加载 text handler）
 2. 打开串口监视器
 3. 看到 `文字控制台已启动` 提示
@@ -363,14 +422,14 @@ python -m esptool --chip esp32s3 -p COM6 -b 460800 \
 
 ## 8. 关键资源
 
-| 资源 | 地址 | 用途 |
-|------|------|------|
-| 本仓库 | `feature/robot-arm-vla` 分支 | ESP32 固件源码 |
-| OpenClaw 后端 | `C:\Users\24628\xiaozhi-esp32-server` (本地) | LLM + TTS + MCP 调度 |
-| smolVLA | [github.com/ZhangYizhe/smolVLA](https://github.com/ZhangYizhe/smolVLA) | VLA 视觉-语言-动作模型 |
-| LeRobot | [github.com/huggingface/lerobot](https://github.com/huggingface/lerobot) | SO101 仿真 + 数据采集 + 训练 |
-| LeRobot SO100 文档 | [lerobot.readthedocs.io](https://lerobot.readthedocs.io/en/latest/) | SO101 机械臂 SDK 参考 |
-| 盒子桥教程 | [B站 BV1LN411K7Ps](https://www.bilibili.com/video/BV1LN411K7Ps/) | SO101 DIY 入门 |
+| 资源               | 地址                                                                  | 用途                         |
+| ------------------ | --------------------------------------------------------------------- | ---------------------------- |
+| 本仓库             | `feature/robot-arm-vla` 分支                                        | ESP32 固件源码               |
+| OpenClaw 后端      | `C:\Users\24628\xiaozhi-esp32-server` (本地)                        | LLM + TTS + MCP 调度         |
+| smolVLA            | [github.com/ZhangYizhe/smolVLA](https://github.com/ZhangYizhe/smolVLA)   | VLA 视觉-语言-动作模型       |
+| LeRobot            | [github.com/huggingface/lerobot](https://github.com/huggingface/lerobot) | SO101 仿真 + 数据采集 + 训练 |
+| LeRobot SO100 文档 | [lerobot.readthedocs.io](https://lerobot.readthedocs.io/en/latest/)      | SO101 机械臂 SDK 参考        |
+| 盒子桥教程         | [B站 BV1LN411K7Ps](https://www.bilibili.com/video/BV1LN411K7Ps/)         | SO101 DIY 入门               |
 
 ---
 
@@ -410,12 +469,12 @@ python -m esptool --chip esp32s3 -p COM6 -b 460800 \
 
 ## 附：提交历史
 
-| 提交 | 日期 | 说明 |
-|------|------|------|
-| *(待提交)* | 2026-06-23 | feat: 添加文字消息交互（串口控制台 + 协议层扩展 + 服务器适配） |
+| 提交         | 日期       | 说明                                                              |
+| ------------ | ---------- | ----------------------------------------------------------------- |
+| *(待提交)* | 2026-06-23 | feat: 添加文字消息交互（串口控制台 + 协议层扩展 + 服务器适配）    |
 | *(待提交)* | 2026-06-23 | fix: ESP-IDF v5.5.3 兼容性修复（12文件 + MSYS绕过 + 音量API修复） |
-| `c3f96f3` | 2026-06-23 | docs: 添加小智自定义板机械臂VLA集成README |
-| `32c0d0e` | 2026-06-23 | feat: 添加机械臂VLA集成支持（UART+ MCP + Kconfig） |
-| `05ff1b9` | 2026-06-23 | refactor: 移除所有非 ESP32-S3 板子支持 |
-| `f3c5202` | 2026-06-23 | chore: 清理非 S3 相关文件 |
-| `c09a934` | 2026-06-23 | Update README_zh.md |
+| `c3f96f3`  | 2026-06-23 | docs: 添加小智自定义板机械臂VLA集成README                         |
+| `32c0d0e`  | 2026-06-23 | feat: 添加机械臂VLA集成支持（UART+ MCP + Kconfig）                |
+| `05ff1b9`  | 2026-06-23 | refactor: 移除所有非 ESP32-S3 板子支持                            |
+| `f3c5202`  | 2026-06-23 | chore: 清理非 S3 相关文件                                         |
+| `c09a934`  | 2026-06-23 | Update README_zh.md                                               |
