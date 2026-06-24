@@ -123,18 +123,18 @@ SO101 原装驱动板通常有串口接口（或通过 USB 转 TTL 模块）：
 
 | 小智 ESP32-S3 | → | SO101 驱动板 | 说明 |
 |--------------|---|-------------|------|
-| **IO17** (UART1 TX) | → | RX | ESP32 发送关节指令 |
-| **IO18** (UART1 RX) | ← | TX | 接收状态反馈（可选） |
+| **IO9** (UART1 TX) | → | RX | ESP32 发送关节指令 |
+| **IO10** (UART1 RX) | ← | TX | 接收状态反馈（可选） |
 | **GND** | → | GND | 共地 |
 | **5V** | → | VCC | 可选：给驱动板供电 |
 
-> 注：IO17/IO18 在你的板子上是 CN1 扩展接口的预留引脚，正好用于此用途。
+> 注：IO9/IO10 位于 ESP32-S3 主控附近板载焊盘，走线方便。IO17/IO18 在 CN1 扩展接口上作为预留引脚保持空闲。
 
 如果你的 SO101 驱动板只有 USB 口，可以用一个 **USB 转 TTL 模块** 接线：
 
 ```
-ESP32 TX (IO17) → USB转TTL模块 RX → 模块 USB → SO101 USB口
-ESP32 RX (IO18) ← USB转TTL模块 TX
+ESP32 TX (IO9) → USB转TTL模块 RX → 模块 USB → SO101 USB口
+ESP32 RX (IO10) ← USB转TTL模块 TX
 ```
 
 ### 4.2 SO101 机械臂使用的空闲引脚
@@ -143,8 +143,10 @@ ESP32 RX (IO18) ← USB转TTL模块 TX
 
 | 引脚 | 用途 | 说明 |
 |------|------|------|
-| IO17 | UART TX → 机械臂 RX | CN1 扩展接口·空闲 |
-| IO18 | UART RX ← 机械臂 TX | CN1 扩展接口·空闲 |
+| IO9 | UART TX → 机械臂 RX | 板载焊盘（主控附近） |
+| IO10 | UART RX ← 机械臂 TX | 板载焊盘（主控附近） |
+| IO17 | (预留) | CN1 扩展接口·空闲 |
+| IO18 | (预留) | CN1 扩展接口·空闲 |
 | IO19 | (预留) | CN1 扩展接口 |
 | IO20 | (预留) | CN1 扩展接口 |
 | IO13-IO16 | (完全空闲) | 可用于舵机 PWM 直驱 |
@@ -206,7 +208,7 @@ uart_config_t uart_config = {
     .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
 };
 uart_param_config(UART_NUM_1, &uart_config);
-uart_set_pin(UART_NUM_1, GPIO_NUM_17, GPIO_NUM_18, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+uart_set_pin(UART_NUM_1, GPIO_NUM_9, GPIO_NUM_10, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 uart_driver_install(UART_NUM_1, 256, 0, 0, NULL, 0);
 
 // MCP 工具：机械臂关节控制
@@ -570,7 +572,7 @@ LoRA 微调
 ```
 ESP32-S3 ←WiFi→ 接收命令 → UART → SO101 驱动板
 ```
-- [ ] 接线：ESP32 IO17/IO18 → SO101 串口
+- [ ] 接线：ESP32 IO9/IO10 → SO101 串口
 - [ ] ESP32 端编写 UART 驱动 + MCP 工具
 - [ ] 验证：PC 发 WiFi 命令 → ESP32 转发 → 机械臂动作
 
@@ -615,8 +617,8 @@ ESP32 + 摄像头 ←MCP→ OpenClaw ←HTTP→ smolVLA-0.5B 推理服务
                     │ ESP32-S3  │  ← 小智语音助手 + 无线桥接
                     │ (小智板)   │
                     ├───────────┤
-                    │ IO17 TX ──┼──────────┐
-                    │ IO18 RX ──┼──────────┤
+                    │ IO9 TX ───┼──────────┐
+                    │ IO10 RX ──┼──────────┤
                     │ GND     ──┼──────────┤
                     └───────────┘          │
                                            │ 杜邦线
