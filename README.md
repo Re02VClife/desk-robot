@@ -71,17 +71,22 @@
 
 ## 快速开始
 
-### 1. 启动 OpenClaw 服务器
+### 1. 部署 OpenClaw 后端服务
 
-```cmd
-set PATH=C:\Users\24628\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-full_build\bin;%PATH%
-cd C:\Users\24628\xiaozhi-esp32-server\main\xiaozhi-server
-venv\Scripts\python.exe app.py
+本设备需要连接 OpenClaw 后端服务器。后端部署步骤：
+
+```bash
+# 1. 克隆后端
+git clone https://github.com/xinnan-tech/xiaozhi-esp32-server.git
+cd xiaozhi-esp32-server
+
+# 2. 配置并启动
+cp main/xiaozhi-server/config.yaml.example main/xiaozhi-server/config.yaml
+# 编辑 config.yaml 填入你的 API key
+docker-compose -f main/xiaozhi-server/docker-compose.yml up -d
 ```
 
-- **LLM**：阿里百炼 `deepseek-v4-flash`
-- **TTS**：微软 Edge TTS (`zh-CN-XiaoxiaoNeural`)
-- **WebSocket**：`ws://192.168.123.25:8000/xiaozhi/v1/`
+> **运行后**，确认 WebSocket 地址（默认 `ws://<服务器IP>:8000/xiaozhi/v1/`），后续固件需配置该地址。
 
 ### 2. 编译 & 烧录固件
 
@@ -158,7 +163,7 @@ ESP32 GND       → SO101 驱动板 GND
 | 资源 | 地址 | 用途 |
 |------|------|------|
 | 本仓库 | `feature/robot-arm-vla` 分支 | ESP32 固件源码 |
-| OpenClaw 后端 | `C:\Users\24628\xiaozhi-esp32-server` | LLM + TTS + MCP 调度 |
+| OpenClaw 后端 | [xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) | LLM + TTS + MCP 调度 |
 | smolVLA | [github.com/ZhangYizhe/smolVLA](https://github.com/ZhangYizhe/smolVLA) | VLA 视觉-语言-动作模型（4GB 显存） |
 | LeRobot | [github.com/huggingface/lerobot](https://github.com/huggingface/lerobot) | 仿真 + 数据采集 + 训练框架 |
 | 盒子桥教程 | [B站 BV1LN411K7Ps](https://www.bilibili.com/video/BV1LN411K7Ps/) | SO101 DIY 入门 |
