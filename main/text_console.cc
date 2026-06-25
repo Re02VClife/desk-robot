@@ -75,8 +75,8 @@ void TextConsole::Task(void* arg) {
                 fflush(stdout);
             }
         }
-        else if (c >= 32 && c < 127) {
-            // 可打印字符
+        else if (c >= 32 && c != 127) {
+            // 可打印字符（接受 UTF-8 多字节编码）
             if (pos < kMaxLine - 1) {
                 buffer[pos++] = (char)c;
                 putchar(c);
