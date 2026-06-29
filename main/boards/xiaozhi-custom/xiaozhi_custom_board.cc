@@ -13,6 +13,7 @@
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
 #include <driver/i2c_master.h>
+#include <cJSON.h>
 #include <driver/uart.h>
 #include "mcp_server.h"
 #include "assets/lang_config.h"
@@ -166,6 +167,36 @@ private:
             [this](const PropertyList& props) -> ReturnValue {
                 auto angles_str = props["angles"].value<std::string>();
                 int speed = props["speed"].value<int>();
+
+                // 安全限位：解析角度数组，裁剪到 [0, 180] 范围
+                cJSON* angles_json = cJSON_Parse(angles_str.c_str());
+                if (angles_json && cJSON_IsArray(angles_json)) {
+                    bool clamped = false;
+                    int count = cJSON_GetArraySize(angles_json);
+                    for (int i = 0; i < count && i < 6; i++) {
+                        cJSON* item = cJSON_GetArrayItem(angles_json, i);
+                        if (cJSON_IsNumber(item)) {
+                            double val = item->valuedouble;
+                            if (val < 0.0) {
+                                ESP_LOGW(TAG, "关节%d角度 %.1f° < 0，裁剪为 0°", i + 1, val);
+                                cJSON_SetNumberValue(item, 0.0);
+                                clamped = true;
+                            } else if (val > 180.0) {
+                                ESP_LOGW(TAG, "关节%d角度 %.1f° > 180°，裁剪为 180°", i + 1, val);
+                                cJSON_SetNumberValue(item, 180.0);
+                                clamped = true;
+                            }
+                        }
+                    }
+                    if (clamped) {
+                        char* safe_angles = cJSON_PrintUnformatted(angles_json);
+                        angles_str = std::string(safe_angles);
+                        cJSON_free(safe_angles);
+                        ESP_LOGW(TAG, "关节角度已安全裁剪: %s", angles_str.c_str());
+                    }
+                }
+                if (angles_json) cJSON_Delete(angles_json);
+
                 std::string cmd = "{\"cmd\":\"move_joints\",\"angles\":" + angles_str + ",\"speed\":" + std::to_string(speed) + "}";
                 SendRobotCommand(cmd);
                 return std::string("{\"status\":\"ok\"}");
