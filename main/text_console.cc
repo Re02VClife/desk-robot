@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cctype>
+#include <driver/uart.h>
 
 #define TAG "TextConsole"
 
@@ -54,6 +55,13 @@ void TextConsole::Task(void* arg) {
                 else if (strcmp(buffer, "/quit") == 0) {
                     ESP_LOGI(TAG, "退出文字控制台");
                     printf("已退出文字控制台。\r\n");
+                }
+                // 串口透传：! 开头直接转发到机械臂 UART1（绕过全部链路）
+                else if (buffer[0] == '!') {
+                    std::string raw = std::string(buffer + 1) + "\n";
+                    uart_write_bytes(UART_NUM_1, raw.c_str(), raw.size());
+                    ESP_LOGI(TAG, "透传机械臂: %s", buffer + 1);
+                    printf("ROBOT_OK\r\n");
                 }
                 // 普通文字消息
                 else {
