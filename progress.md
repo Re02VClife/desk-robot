@@ -8,9 +8,9 @@
 
 ## 当前状态
 
-- **当前轮次**：第 5 轮 — Phase 2 文字对话打通（中文修复 + WebSocket 直连）
-- **当前功能点**：F2.6 硬件接线 + 控臂测试
-- **上次更新**：2026-06-25 17:50
+- **当前轮次**：第 6 轮 — Phase 2 硬件联调（SCServo 直连 + 服务端 MCP 链路）
+- **当前功能点**：F2.6 电平匹配 / MCP 调用链路
+- **上次更新**：2026-07-04 23:30
 
 ---
 
@@ -28,7 +28,10 @@
 | F3.4 | OpenClaw VLA 集成 | ✅ | 2026-06-25 | vla_grasp 插件 + 配置 + 测试 |
 | F4.3 | 安全限位（固件端） | ✅ | 2026-06-25 | 关节角度 0-180° 裁剪 + 编译通过 |
 | — | 中文 UTF-8 修复 | ✅ | 2026-06-25 | text_console.cc: c<127 → c!=127 |
-| F2.6 | 文字→MCP 控臂测试 | 🔲 | — | 需硬件接线 (IO9/IO10 ↔ SO101) |
+| F2.6 | 文字→MCP 控臂测试 | 🔄 | — | SCServo直连已改，3.3V↔5V 电平问题 |
+| F2.7 | SO101 硬件调试工具 | ✅ | 2026-07-04 | 限位读取/EEPROM dump/跳舞/安全测试 |
+| — | 服务端 function_call 修复 | ✅ | 2026-07-04 | intent_type+func_handler+关键词 |
+| F2.8 | UART 电平匹配 | 🔲 | — | ESP32 3.3V → SO101 5V 总线，需上拉 |
 | F3.1 | smolVLA 环境搭建 | 🔲 | — | 需 GPU |
 | F3.2 | FastAPI VLA 推理服务 | 🔲 | — | stub 已就绪，待 GPU |
 | F3.3 | 模型权重下载 + 测试 | 🔲 | — | 需 GPU |
@@ -184,6 +187,55 @@ VLA:
 **改动**：`main/text_console.cc:78` — `c >= 32 && c < 127` → `c >= 32 && c != 127`
 
 UTF-8 中文编码使用 >127 的字节，旧代码只接受 ASCII 可打印字符，中文被丢弃。
+
+---
+
+### 2026-07-04：固件 SCServo 直连改造 ✅
+
+**背景**：SO101 排针接的是舵机总线（SCServo 二进制协议，1M bps），不是 JSON 串口。之前发 JSON 到排针，MCU 不认识。
+
+**固件改动**：
+- `config.h`: UART1 波特率 115200 → **1000000** bps
+- `xiaozhi_custom_board.cc`:
+  - 新增 SCServo 协议函数：`ScsChecksum`, `ScsWriteByte`, `ScsWriteWord`, `ScsReadWord`
+  - 新增 6 关节限位表 `JOINT_LIMITS[6][2]`，角度→步值映射 `AngleToSteps()`
+  - `move_joints` MCP 工具：角度度数值 → 步值 → SCServo 写入
+  - `gripper` MCP 工具：open=true→2100, open=false→2400
+  - `get_status` MCP 工具：读取 6 舵机当前位置，返回 JSON
+  - 启动时自动使能 6 舵机扭矩（`ScsWriteByte(sid, 40, 1)`）
+- `text_console.cc`: 新增 `!GOPEN`/`!GCLOSE` 命令，直发 SCServo 二进制包（纯硬件测试）
+- `mcp_server.cc`: 新增 `ESP_LOGI` 诊断日志 `🔧 MCP tools/call`
+
+**验证**：
+- ✅ `bash esp_idf_build.sh build` 编译通过
+- ✅ 启动日志：`1000000 bps (SCServo直连)` + `6 个舵机扭矩已使能`
+- ✅ `!GOPEN` → `SCServo 夹爪: 张开 → 2100` + `GRIPPER_OPEN`
+- ❌ 舵机实际未动 — **3.3V ↔ 5V 电平不匹配**，需加 1kΩ 上拉电阻
+
+### 2026-07-04：服务端 function_call 链路修复 ✅
+
+**4 个依次修复的 Bug**：
+1. `ARM_KEYWORDS` 缺少「打开」→ 补全
+2. `intent_type` 始终 `"nointent"` → `__init__` 中直接从 config 读取
+3. `func_handler` 未初始化 → 把 `_initialize_intent()` 移到音频初始化**之前**
+4. `func_handler` 重复初始化清理
+
+**验证**：
+- ✅ `intent_type='function_call'`
+- ✅ `检测到机械臂指令，直接路由到 move_arm`
+- ✅ `func_handler` 包含 `move_arm`
+- ⚠️ `call_mcp_tool` 后续卡住（待排查，可能与 WebSocket 不稳定有关）
+
+### 2026-07-04：SO101 测试工具集 ✅
+
+新增/改进的测试脚本：
+- `so101_safe_test.py` — 零依赖 pyserial，内联 SCServo 协议，±40步微动
+- `so101_check_limits.py` — 读取 6 关节 EEPROM 限位（地址 9/11，小端序）
+- `so101_dump_eeprom.py` — Dump 舵机控制表（排障用）
+- `so101_read_pos.py` — 读取当前位置 + 限位（用于记录 HOME）
+- `so101_dance.py` — 跳舞脚本，基于 HOME 偏移 + 限位裁剪 + 平滑插值
+- `quick_test.py` — ESP32 串口通信快速诊断
+- `ws_mcp_test.py` — WebSocket MCP 直连测试
 
 ---
 

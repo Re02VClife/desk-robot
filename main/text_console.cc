@@ -4,12 +4,38 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_rom_sys.h>
 #include <cstring>
 #include <cstdio>
 #include <cctype>
 #include <driver/uart.h>
 
 #define TAG "TextConsole"
+
+// SCServo 直连夹爪测试函数
+static void scs_gripper(bool open) {
+    uint16_t pos = open ? 2100 : 2400;  // 开/合位置（步值）
+    uint16_t speed = 150;
+
+    // 速度包: [0xFF,0xFF, ID, Len, WRITE, Addr, ValL, ValH, Cksum]
+    uint8_t spd[9] = {0xFF, 0xFF, 6, 5, 0x03, 46,
+                      (uint8_t)(speed & 0xFF), (uint8_t)((speed >> 8) & 0xFF), 0};
+    uint8_t sum = 0;
+    for (int i = 2; i < 8; i++) sum += spd[i];
+    spd[8] = ~sum;
+
+    // 位置包
+    uint8_t pos_pkt[9] = {0xFF, 0xFF, 6, 5, 0x03, 42,
+                          (uint8_t)(pos & 0xFF), (uint8_t)((pos >> 8) & 0xFF), 0};
+    sum = 0;
+    for (int i = 2; i < 8; i++) sum += pos_pkt[i];
+    pos_pkt[8] = ~sum;
+
+    uart_write_bytes(UART_NUM_1, spd, 9);
+    esp_rom_delay_us(300);
+    uart_write_bytes(UART_NUM_1, pos_pkt, 9);
+    ESP_LOGI(TAG, "SCServo 夹爪: %s → %d", open ? "张开" : "闭合", pos);
+}
 
 void TextConsole::Start() {
     xTaskCreate(Task, "text_console", 4096, nullptr, 2, nullptr);
@@ -55,6 +81,15 @@ void TextConsole::Task(void* arg) {
                 else if (strcmp(buffer, "/quit") == 0) {
                     ESP_LOGI(TAG, "退出文字控制台");
                     printf("已退出文字控制台。\r\n");
+                }
+                // SCServo 直连测试指令
+                else if (strcmp(buffer, "!GOPEN") == 0) {
+                    scs_gripper(true);
+                    printf("GRIPPER_OPEN\r\n");
+                }
+                else if (strcmp(buffer, "!GCLOSE") == 0) {
+                    scs_gripper(false);
+                    printf("GRIPPER_CLOSE\r\n");
                 }
                 // 串口透传：! 开头直接转发到机械臂 UART1（绕过全部链路）
                 else if (buffer[0] == '!') {

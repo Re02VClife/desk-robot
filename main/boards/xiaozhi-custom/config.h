@@ -73,12 +73,12 @@
 #define BATTERY_LOWER_RESISTOR 100000.0f
 
 // ========== 机械臂 UART1 配置 ==========
-// UART1 连接 LeRobot SO101 驱动板
-// TX=IO9 -> 驱动板 RX, RX=IO10 <- 驱动板 TX
+// UART1 直连 SO101 舵机总线（SCServo 二进制协议，1M bps）
+// TX=IO9 -> 舵机总线, RX=IO10 <- 舵机总线
 #define ROBOT_ARM_UART_PORT       UART_NUM_1
 #define ROBOT_ARM_UART_TXD_PIN    GPIO_NUM_9
 #define ROBOT_ARM_UART_RXD_PIN    GPIO_NUM_10
-#define ROBOT_ARM_UART_BAUD_RATE  115200
+#define ROBOT_ARM_UART_BAUD_RATE  1000000
 #define ROBOT_ARM_UART_BUF_SIZE   256
 
 #endif // _BOARD_CONFIG_H_

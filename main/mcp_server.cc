@@ -509,6 +509,7 @@ void McpServer::GetToolsList(int id, const std::string& cursor, bool list_user_o
 }
 
 void McpServer::DoToolCall(int id, const std::string& tool_name, const cJSON* tool_arguments) {
+    ESP_LOGI(TAG, "🔧 MCP tools/call: %s", tool_name.c_str());
     auto tool_iter = std::find_if(tools_.begin(), tools_.end(), 
                                  [&tool_name](const McpTool* tool) { 
                                      return tool->name() == tool_name; 

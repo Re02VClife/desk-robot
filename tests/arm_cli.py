@@ -21,7 +21,7 @@ import json
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-SERIAL_PORT = "COM6"
+SERIAL_PORT = "COM12"
 BAUD = 115200
 
 # ====== 连接串口 ======
