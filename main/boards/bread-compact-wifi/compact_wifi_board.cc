@@ -6,12 +6,12 @@
 #include "button.h"
 #include "config.h"
 #include "mcp_server.h"
-#include "lamp_controller.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
+#include <driver/ledc.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 
@@ -20,6 +20,51 @@
 #endif
 
 #define TAG "CompactWifiBoard"
+
+// ========== 机器狗舵机驱动（LEDC PWM, 50Hz） ==========
+static constexpr uint32_t SERVO_PWM_FREQ = 50;        // 50Hz
+static constexpr ledc_timer_t SERVO_TIMER = LEDC_TIMER_0;
+static constexpr ledc_mode_t SERVO_MODE = LEDC_LOW_SPEED_MODE;
+static constexpr ledc_timer_bit_t SERVO_DUTY_RES = LEDC_TIMER_14_BIT;  // 0~16383
+static constexpr uint32_t SERVO_DUTY_MAX = (1 << 14) - 1;  // 16383
+// 舵机脉宽范围: 500us(0°) ~ 2500us(180°), 周期20ms
+static constexpr uint32_t SERVO_MIN_US = 500;
+static constexpr uint32_t SERVO_MAX_US = 2500;
+
+static const struct {
+    const char* name;
+    gpio_num_t pin;
+} servo_pins[] = {
+    {"右前", SERVO_RIGHT_FRONT_PIN},   // GPIO 13
+    {"右后", SERVO_RIGHT_BACK_PIN},    // GPIO 14
+    {"左前", SERVO_LEFT_FRONT_PIN},    // GPIO 17
+    {"左后", SERVO_LEFT_BACK_PIN},     // GPIO 18
+};
+
+// ========== 触摸传感器 ==========
+static const struct {
+    const char* name;
+    gpio_num_t pin;
+} touch_pins[] = {
+    {"左触", TOUCH_SENSOR_LEFT_PIN},    // GPIO 8
+    {"前触", TOUCH_SENSOR_FRONT_PIN},   // GPIO 19
+    {"右触", TOUCH_SENSOR_RIGHT_PIN},   // GPIO 20
+};
+
+// 角度→脉宽→duty 转换
+static uint32_t AngleToDuty(int angle) {
+    if (angle < 0) angle = 0;
+    if (angle > 180) angle = 180;
+    uint32_t pulse_us = SERVO_MIN_US + (uint32_t)(angle / 180.0f * (SERVO_MAX_US - SERVO_MIN_US));
+    return (pulse_us * (SERVO_DUTY_MAX + 1)) / 20000;
+}
+
+static void ServoSetAngle(int servo_index, int angle) {
+    if (servo_index < 0 || servo_index > 3) return;
+    uint32_t duty = AngleToDuty(angle);
+    ESP_ERROR_CHECK(ledc_set_duty(SERVO_MODE, (ledc_channel_t)servo_index, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(SERVO_MODE, (ledc_channel_t)servo_index));
+}
 
 class CompactWifiBoard : public WifiBoard {
 private:
@@ -147,9 +192,127 @@ private:
         });
     }
 
-    // 物联网初始化，逐步迁移到 MCP 协议
-    void InitializeTools() {
-        static LampController lamp(LAMP_GPIO);
+    // 初始化舵机 PWM（LEDC 4 通道）
+    void InitializeServos() {
+        ledc_timer_config_t timer_cfg = {
+            .speed_mode = SERVO_MODE,
+            .duty_resolution = SERVO_DUTY_RES,
+            .timer_num = SERVO_TIMER,
+            .freq_hz = SERVO_PWM_FREQ,
+            .clk_cfg = LEDC_AUTO_CLK,
+        };
+        ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
+
+        for (int i = 0; i < 4; i++) {
+            ledc_channel_config_t ch_cfg = {
+                .gpio_num = (int)servo_pins[i].pin,
+                .speed_mode = SERVO_MODE,
+                .channel = (ledc_channel_t)i,
+                .intr_type = LEDC_INTR_DISABLE,
+                .timer_sel = SERVO_TIMER,
+                .duty = AngleToDuty(90),  // 初始 90°（中位）
+                .hpoint = 0,
+                .flags = { .output_invert = 0 },
+            };
+            ESP_ERROR_CHECK(ledc_channel_config(&ch_cfg));
+            ESP_LOGI(TAG, "舵机 %s 初始化: GPIO%d, 中位=90°", servo_pins[i].name, servo_pins[i].pin);
+        }
+    }
+
+    // 初始化触摸传感器（GPIO 输入 + 内部上拉）
+    void InitializeTouchSensors() {
+        for (int i = 0; i < 3; i++) {
+            gpio_config_t cfg = {
+                .pin_bit_mask = (1ULL << touch_pins[i].pin),
+                .mode = GPIO_MODE_INPUT,
+                .pull_up_en = GPIO_PULLUP_ENABLE,
+                .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                .intr_type = GPIO_INTR_DISABLE,
+            };
+            ESP_ERROR_CHECK(gpio_config(&cfg));
+            ESP_LOGI(TAG, "触摸 %s 初始化: GPIO%d", touch_pins[i].name, touch_pins[i].pin);
+        }
+    }
+
+    // 注册机器狗 MCP 工具
+    void InitializeDogTools() {
+        auto& mcp = McpServer::GetInstance();
+
+        // dog.servo.set_angle — 控制单个舵机角度
+        mcp.AddTool("dog.servo.set_angle",
+            "设置机器狗单个舵机角度（0-180°）。servo: right_front/right_back/left_front/left_back",
+            PropertyList({
+                Property("servo", kPropertyTypeString),
+                Property("angle", kPropertyTypeInteger, 90, 0, 180),
+            }),
+            [](const PropertyList& props) -> ReturnValue {
+                auto servo_name = props["servo"].value<std::string>();
+                int angle = props["angle"].value<int>();
+                int idx = -1;
+                if (servo_name == "right_front") idx = 0;
+                else if (servo_name == "right_back") idx = 1;
+                else if (servo_name == "left_front") idx = 2;
+                else if (servo_name == "left_back") idx = 3;
+                else return std::string("{\"status\":\"error\",\"message\":\"无效的舵机名\"}");
+
+                ServoSetAngle(idx, angle);
+                ESP_LOGI(TAG, "舵机 %s → %d°", servo_pins[idx].name, angle);
+                return std::string("{\"status\":\"ok\"}");
+            });
+
+        // dog.servo.set_all — 批量设置 4 个舵机
+        mcp.AddTool("dog.servo.set_all",
+            "设置 4 个舵机角度。angles: [右前,右后,左前,左后]，每个 0-180°",
+            PropertyList({
+                Property("angles", kPropertyTypeString),  // JSON 数组字符串
+            }),
+            [](const PropertyList& props) -> ReturnValue {
+                auto angles_str = props["angles"].value<std::string>();
+                cJSON* arr = cJSON_Parse(angles_str.c_str());
+                if (!arr || !cJSON_IsArray(arr)) {
+                    if (arr) cJSON_Delete(arr);
+                    return std::string("{\"status\":\"error\",\"message\":\"格式错误\"}");
+                }
+                int count = cJSON_GetArraySize(arr);
+                if (count > 4) count = 4;
+                for (int i = 0; i < count; i++) {
+                    cJSON* item = cJSON_GetArrayItem(arr, i);
+                    if (cJSON_IsNumber(item)) {
+                        ServoSetAngle(i, (int)item->valuedouble);
+                        ESP_LOGI(TAG, "舵机 %s → %d°", servo_pins[i].name, (int)item->valuedouble);
+                    }
+                }
+                cJSON_Delete(arr);
+                return std::string("{\"status\":\"ok\"}");
+            });
+
+        // dog.servo.center — 全部回中位 90°
+        mcp.AddTool("dog.servo.center",
+            "所有 4 个舵机回到中位（90°）",
+            PropertyList(),
+            [](const PropertyList& props) -> ReturnValue {
+                for (int i = 0; i < 4; i++) {
+                    ServoSetAngle(i, 90);
+                }
+                ESP_LOGI(TAG, "全部舵机 → 中位");
+                return std::string("{\"status\":\"ok\"}");
+            });
+
+        // dog.touch.read — 读取 3 个触摸传感器状态
+        mcp.AddTool("dog.touch.read",
+            "读取 3 个触须传感器状态（按下=1, 未按=0）",
+            PropertyList(),
+            [](const PropertyList& props) -> ReturnValue {
+                char buf[128];
+                int left  = gpio_get_level(TOUCH_SENSOR_LEFT_PIN) == 0 ? 1 : 0;
+                int front = gpio_get_level(TOUCH_SENSOR_FRONT_PIN) == 0 ? 1 : 0;
+                int right = gpio_get_level(TOUCH_SENSOR_RIGHT_PIN) == 0 ? 1 : 0;
+                snprintf(buf, sizeof(buf),
+                    "{\"status\":\"ok\",\"left\":%d,\"front\":%d,\"right\":%d}", left, front, right);
+                return std::string(buf);
+            });
+
+        ESP_LOGI(TAG, "机器狗 MCP 工具注册完成（4个舵机+1个触摸读取）");
     }
 
 public:
@@ -161,7 +324,10 @@ public:
         InitializeDisplayI2c();
         InitializeSsd1306Display();
         InitializeButtons();
-        InitializeTools();
+        InitializeServos();
+        InitializeTouchSensors();
+        InitializeDogTools();
+        ESP_LOGI(TAG, "机器狗 CompactWifiBoard 初始化完成");
     }
 
     virtual Led* GetLed() override {
