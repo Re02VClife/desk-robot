@@ -50,7 +50,7 @@
 #endif
 
 #define DISPLAY_MIRROR_X false
-#define DISPLAY_MIRROR_Y false
+#define DISPLAY_MIRROR_Y true
 
 // ========== 机器狗 4 路舵机引脚（LEDC PWM, 50Hz） ==========
 // M1=右前, M2=右后, M3=左前, M4=左后
