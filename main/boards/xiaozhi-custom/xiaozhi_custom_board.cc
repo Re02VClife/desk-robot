@@ -11,8 +11,10 @@
 #include <esp_lcd_panel_vendor.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_rom_sys.h>
 #include <driver/spi_common.h>
 #include <driver/i2c_master.h>
+#include <cJSON.h>
 #include <driver/uart.h>
 #include "mcp_server.h"
 #include "assets/lang_config.h"
@@ -128,9 +130,94 @@ private:
         );
     }
 
-    // ========== 机械臂 UART1 通信 ==========
+    // ========== 机械臂 UART1 通信（SCServo 二进制协议） ==========
 
-    // 初始化 UART1（连接机械臂驱动板）
+    // SCServo 控制表地址（型号 252，字节地址，小端序）
+    static constexpr uint8_t SCS_ADDR_TORQUE  = 40;  // 扭矩使能
+    static constexpr uint8_t SCS_ADDR_GOAL    = 42;  // 目标位置（2字节）
+    static constexpr uint8_t SCS_ADDR_SPEED   = 46;  // 目标速度（2字节）
+    static constexpr uint8_t SCS_ADDR_PRESENT = 56;  // 当前位置（2字节，只读）
+
+    // 各关节限位 [CW最小, CCW最大]（步值，4096步=360°）
+    // 角度 0°→CW 限位，180°→CCW 限位
+    static constexpr uint16_t JOINT_LIMITS[6][2] = {
+        {1100, 2900},  // 关节1 底座
+        { 800, 3100},  // 关节2 大臂
+        { 800, 2990},  // 关节3 小臂
+        { 950, 3000},  // 关节4 腕转
+        { 800, 3900},  // 关节5 腕俯
+        {2000, 3400},  // 关节6 夹爪
+    };
+
+    // SCServo 校验和：~(id + len + inst + ... + params) & 0xFF
+    static uint8_t ScsChecksum(const uint8_t* data, size_t len) {
+        uint8_t sum = 0;
+        for (size_t i = 0; i < len; i++) sum += data[i];
+        return ~sum;
+    }
+
+    // 写入 1 字节到舵机控制表
+    static void ScsWriteByte(uint8_t sid, uint8_t addr, uint8_t value) {
+        uint8_t pkt[8];
+        pkt[0] = 0xFF; pkt[1] = 0xFF;
+        pkt[2] = sid;
+        pkt[3] = 4;       // length = params(2) + inst(1) + cksum(1)
+        pkt[4] = 0x03;    // INST_WRITE
+        pkt[5] = addr;
+        pkt[6] = value;
+        pkt[7] = ScsChecksum(&pkt[2], 5);
+        uart_write_bytes(ROBOT_ARM_UART_PORT, pkt, 8);
+        esp_rom_delay_us(200);
+    }
+
+    // 写入 16 位值到舵机控制表（小端序）
+    static void ScsWriteWord(uint8_t sid, uint8_t addr, uint16_t value) {
+        uint8_t pkt[9];
+        pkt[0] = 0xFF; pkt[1] = 0xFF;
+        pkt[2] = sid;
+        pkt[3] = 5;       // length = params(3) + inst(1) + cksum(1)
+        pkt[4] = 0x03;    // INST_WRITE
+        pkt[5] = addr;
+        pkt[6] = (uint8_t)(value & 0xFF);
+        pkt[7] = (uint8_t)((value >> 8) & 0xFF);
+        pkt[8] = ScsChecksum(&pkt[2], 6);
+        uart_write_bytes(ROBOT_ARM_UART_PORT, pkt, 9);
+        esp_rom_delay_us(200);
+    }
+
+    // 读取 16 位值
+    static uint16_t ScsReadWord(uint8_t sid, uint8_t addr) {
+        uint8_t pkt[8];
+        pkt[0] = 0xFF; pkt[1] = 0xFF;
+        pkt[2] = sid;
+        pkt[3] = 4;
+        pkt[4] = 0x02;    // INST_READ
+        pkt[5] = addr;
+        pkt[6] = 2;       // 读 2 字节
+        pkt[7] = ScsChecksum(&pkt[2], 5);
+        uart_flush_input(ROBOT_ARM_UART_PORT);
+        uart_write_bytes(ROBOT_ARM_UART_PORT, pkt, 8);
+        esp_rom_delay_us(500);
+        uint8_t reply[8];
+        int len = uart_read_bytes(ROBOT_ARM_UART_PORT, reply, 8, pdMS_TO_TICKS(30));
+        if (len >= 8 && reply[0] == 0xFF && reply[1] == 0xFF && reply[4] == 0) {
+            return reply[5] | ((uint16_t)reply[6] << 8);
+        }
+        return 0xFFFF;  // 读取失败标识
+    }
+
+    // 角度（0-180°）→ 步值映射，按各关节限位线性插值
+    static uint16_t AngleToSteps(int joint, double angle) {
+        if (joint < 0 || joint > 5) return 0;
+        // 安全裁剪
+        if (angle < 0.0) angle = 0.0;
+        if (angle > 180.0) angle = 180.0;
+        uint16_t cw  = JOINT_LIMITS[joint][0];
+        uint16_t ccw = JOINT_LIMITS[joint][1];
+        return (uint16_t)(cw + (angle / 180.0) * (ccw - cw));
+    }
+
+    // 初始化 UART1（直连 SO101 舵机总线）
     void InitializeRobotUart() {
         uart_config_t uart_cfg = {
             .baud_rate = ROBOT_ARM_UART_BAUD_RATE,
@@ -140,17 +227,17 @@ private:
             .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
             .source_clk = UART_SCLK_DEFAULT,
         };
-        ESP_ERROR_CHECK(uart_driver_install(ROBOT_ARM_UART_PORT, ROBOT_ARM_UART_BUF_SIZE * 2, 0, 0, NULL, 0));
+        ESP_ERROR_CHECK(uart_driver_install(ROBOT_ARM_UART_PORT, ROBOT_ARM_UART_BUF_SIZE * 2, ROBOT_ARM_UART_BUF_SIZE * 2, 0, NULL, 0));
         ESP_ERROR_CHECK(uart_param_config(ROBOT_ARM_UART_PORT, &uart_cfg));
         ESP_ERROR_CHECK(uart_set_pin(ROBOT_ARM_UART_PORT, ROBOT_ARM_UART_TXD_PIN, ROBOT_ARM_UART_RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-        ESP_LOGI(TAG, "机械臂 UART1 初始化完成: TX=IO%d, RX=IO%d, %d bps", ROBOT_ARM_UART_TXD_PIN, ROBOT_ARM_UART_RXD_PIN, ROBOT_ARM_UART_BAUD_RATE);
-    }
+        ESP_LOGI(TAG, "机械臂 UART1 初始化完成: TX=IO%d, RX=IO%d, %d bps (SCServo直连)", ROBOT_ARM_UART_TXD_PIN, ROBOT_ARM_UART_RXD_PIN, ROBOT_ARM_UART_BAUD_RATE);
 
-    // 发送 JSON 指令到机械臂驱动板（以换行符结尾）
-    void SendRobotCommand(const std::string& json_cmd) {
-        std::string msg = json_cmd + "\n";
-        int written = uart_write_bytes(ROBOT_ARM_UART_PORT, msg.c_str(), msg.size());
-        ESP_LOGI(TAG, "发送机械臂指令: %s (%d 字节)", json_cmd.c_str(), written);
+        // 上电使能全部 6 个舵机扭矩
+        for (uint8_t sid = 1; sid <= 6; sid++) {
+            ScsWriteByte(sid, SCS_ADDR_TORQUE, 1);
+            esp_rom_delay_us(100);
+        }
+        ESP_LOGI(TAG, "6 个舵机扭矩已使能");
     }
 
     // 注册机械臂 MCP 工具
@@ -166,8 +253,34 @@ private:
             [this](const PropertyList& props) -> ReturnValue {
                 auto angles_str = props["angles"].value<std::string>();
                 int speed = props["speed"].value<int>();
-                std::string cmd = "{\"cmd\":\"move_joints\",\"angles\":" + angles_str + ",\"speed\":" + std::to_string(speed) + "}";
-                SendRobotCommand(cmd);
+
+                // 速度映射: 1-100 → SCServo 5-500（0.1RPM 单位）
+                uint16_t scs_speed = (uint16_t)(speed * 5);
+                if (scs_speed < 5) scs_speed = 5;
+
+                cJSON* angles_json = cJSON_Parse(angles_str.c_str());
+                if (!angles_json || !cJSON_IsArray(angles_json)) {
+                    if (angles_json) cJSON_Delete(angles_json);
+                    return std::string("{\"status\":\"error\",\"message\":\"angles 格式错误\"}");
+                }
+
+                int count = cJSON_GetArraySize(angles_json);
+                if (count > 6) count = 6;
+
+                // 先设速度，再设目标位置
+                for (int i = 0; i < count; i++) {
+                    cJSON* item = cJSON_GetArrayItem(angles_json, i);
+                    if (cJSON_IsNumber(item)) {
+                        double angle = item->valuedouble;
+                        if (angle < 0.0) angle = 0.0;
+                        if (angle > 180.0) angle = 180.0;
+                        uint16_t steps = AngleToSteps(i, angle);
+                        uint8_t sid = (uint8_t)(i + 1);
+                        ScsWriteWord(sid, SCS_ADDR_SPEED, scs_speed);
+                        ScsWriteWord(sid, SCS_ADDR_GOAL, steps);
+                    }
+                }
+                cJSON_Delete(angles_json);
                 return std::string("{\"status\":\"ok\"}");
             });
 
@@ -180,20 +293,50 @@ private:
             [this](const PropertyList& props) -> ReturnValue {
                 bool open = props["open"].value<bool>();
                 int speed = props["speed"].value<int>();
-                std::string cmd = "{\"cmd\":\"gripper\",\"open\":" + std::string(open ? "true" : "false") + ",\"speed\":" + std::to_string(speed) + "}";
-                SendRobotCommand(cmd);
-                return std::string("{\"status\":\"ok\"}");
+
+                uint16_t scs_speed = (uint16_t)(speed * 5);
+                if (scs_speed < 5) scs_speed = 5;
+
+                // 夹爪(ID6): CW=2000(最开), CCW=3400(最合)
+                // 张开→2100, 闭合→2400（留 30 步限位余量）
+                uint16_t steps = open ? 2100 : 2400;
+
+                ScsWriteWord(6, SCS_ADDR_SPEED, scs_speed);
+                ScsWriteWord(6, SCS_ADDR_GOAL, steps);
+                return std::string(open ? "{\"status\":\"ok\",\"gripper\":\"open\"}" : "{\"status\":\"ok\",\"gripper\":\"close\"}");
             });
 
         mcp.AddTool("robot.arm.get_status",
-            "获取机械臂当前状态（关节角度、夹爪状态等）。",
+            "获取机械臂当前状态（6个关节的当前位置和角度）。",
             PropertyList(),
             [this](const PropertyList& props) -> ReturnValue {
-                SendRobotCommand("{\"cmd\":\"get_status\"}");
-                return std::string("{\"status\":\"pending\"}");
+                // 读取 6 个关节当前位置
+                int16_t positions[6];
+                for (uint8_t sid = 1; sid <= 6; sid++) {
+                    uint16_t raw = ScsReadWord(sid, SCS_ADDR_PRESENT);
+                    positions[sid - 1] = (raw == 0xFFFF) ? -1 : (int16_t)raw;
+                }
+
+                // 构建 JSON 响应
+                cJSON* root = cJSON_CreateObject();
+                cJSON_AddStringToObject(root, "status", "ok");
+                cJSON* pos_array = cJSON_CreateArray();
+                cJSON* deg_array = cJSON_CreateArray();
+                for (int i = 0; i < 6; i++) {
+                    cJSON_AddItemToArray(pos_array, cJSON_CreateNumber(positions[i]));
+                    double deg = (positions[i] >= 0) ? (positions[i] / 4096.0 * 360.0) : -1.0;
+                    cJSON_AddItemToArray(deg_array, cJSON_CreateNumber(deg));
+                }
+                cJSON_AddItemToObject(root, "positions", pos_array);
+                cJSON_AddItemToObject(root, "degrees", deg_array);
+                char* result = cJSON_PrintUnformatted(root);
+                std::string ret(result);
+                cJSON_free(result);
+                cJSON_Delete(root);
+                return ret;
             });
 
-        ESP_LOGI(TAG, "机械臂 MCP 工具注册完成（3个工具）");
+        ESP_LOGI(TAG, "机械臂 MCP 工具注册完成（3个工具，SCServo直连）");
     }
 
 public:

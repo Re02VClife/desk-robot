@@ -49,11 +49,19 @@
 #error "OLED display type is not selected"
 #endif
 
-#define DISPLAY_MIRROR_X true
+#define DISPLAY_MIRROR_X false
 #define DISPLAY_MIRROR_Y true
 
+// ========== 机器狗 4 路舵机引脚（LEDC PWM, 50Hz） ==========
+// M1=右前, M2=右后, M3=左前, M4=左后
+#define SERVO_RIGHT_FRONT_PIN  GPIO_NUM_13   // M2 右前舵机
+#define SERVO_RIGHT_BACK_PIN   GPIO_NUM_14   // M4 右后舵机
+#define SERVO_LEFT_FRONT_PIN   GPIO_NUM_17   // M1 左前舵机
+#define SERVO_LEFT_BACK_PIN    GPIO_NUM_18   // M3 左后舵机
 
-// A MCP Test: Control a lamp
-#define LAMP_GPIO GPIO_NUM_18
+// ========== 开关式触摸传感器（GPIO 输入，内部上拉） ==========
+#define TOUCH_SENSOR_LEFT_PIN   GPIO_NUM_8   // IO8, 左触须
+#define TOUCH_SENSOR_FRONT_PIN  GPIO_NUM_19  // IO19, 前触须
+#define TOUCH_SENSOR_RIGHT_PIN  GPIO_NUM_20  // IO20, 右触须
 
 #endif // _BOARD_CONFIG_H_
