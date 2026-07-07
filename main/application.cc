@@ -874,6 +874,17 @@ void Application::HandleStateChangedEvent() {
     // 如果状态从 connecting 切换到其他（服务器有响应），清除文字输入超时
     if (new_state != kDeviceStateConnecting) {
         text_timeout_tick_ = 0;
+        // 如果有排队的文字，自动发送
+        if (!pending_text_input_.empty() && (new_state == kDeviceStateIdle || new_state == kDeviceStateListening)) {
+            std::string queued = pending_text_input_;
+            pending_text_input_.clear();
+            ESP_LOGI(TAG, "发送排队文字: %s", queued.c_str());
+            Schedule([this, queued]() {
+                if (protocol_->IsAudioChannelOpened() || protocol_->OpenAudioChannel()) {
+                    protocol_->SendTextInput(queued);
+                }
+            });
+        }
     }
 
     auto& board = Board::GetInstance();
@@ -1148,8 +1159,8 @@ void Application::HandleTextInputEvent(const std::string& text) {
     auto display = Board::GetInstance().GetDisplay();
     display->SetChatMessage("user", text.c_str());
 
-    // 设置超时：15 秒后若仍在 connecting 状态，提示服务器未响应
-    text_timeout_tick_ = clock_ticks_ + 15;
+    // 设置超时：60 秒后若仍在 connecting 状态，提示服务器未响应
+    text_timeout_tick_ = clock_ticks_ + 60;
 
     // 根据当前状态决定如何发送文字
     if (state == kDeviceStateIdle) {
@@ -1187,6 +1198,10 @@ void Application::HandleTextInputEvent(const std::string& text) {
             }
             protocol_->SendTextInput(text);
         });
+    } else if (state == kDeviceStateConnecting) {
+        // 正在连接中：存储文字，等状态变为 idle/listening 后自动发送
+        ESP_LOGI(TAG, "连接中，文字已排队: %s", text.c_str());
+        pending_text_input_ = text;
     } else {
         ESP_LOGW(TAG, "Cannot send text in current state: %d", (int)state);
     }
