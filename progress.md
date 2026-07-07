@@ -8,9 +8,9 @@
 
 ## 当前状态
 
-- **当前轮次**：第 7 轮 — Phase 2 机器狗固件开发 + ZZPET 逆向 + 机械臂联调
-- **当前功能点**：机器狗固件完成 / ZZPET 分析完成 / 机械臂驱动板调试
-- **上次更新**：2026-07-06 22:00
+- **当前轮次**：第 9 轮 — LLM 直控机械臂 + 多步指令 + 安全约束
+- **当前功能点**：F2.13 LLM 自由控臂 + 视觉 + 触摸交互 完成
+- **上次更新**：2026-07-08
 
 ---
 
@@ -28,21 +28,26 @@
 | F3.4 | OpenClaw VLA 集成 | ✅ | 2026-06-25 | vla_grasp 插件 + 配置 + 测试 |
 | F4.3 | 安全限位（固件端） | ✅ | 2026-06-25 | 关节角度 0-180° 裁剪 + 编译通过 |
 | — | 中文 UTF-8 修复 | ✅ | 2026-06-25 | text_console.cc: c<127 → c!=127 |
-| F2.6 | 文字→MCP 控臂测试 | 🔄 | — | SCServo直连已改，3.3V↔5V 电平问题 |
+| F2.6 | 文字→MCP 控臂测试 | ✅ | 2026-07-07 | 端到端打通：文字→LLM→move_arm→MCP→SCServo→舵机 |
 | F2.7 | SO101 硬件调试工具 | ✅ | 2026-07-04 | 限位读取/EEPROM dump/跳舞/安全测试 |
 | — | 服务端 function_call 修复 | ✅ | 2026-07-04 | intent_type+func_handler+关键词 |
-| F2.8 | UART 电平匹配 | 🔲 | — | ESP32 3.3V → SO101 5V 总线，需上拉 |
 | F2.8 | UART 电平匹配 | ✅ | 2026-07-06 | Bus Servo Adapter V1.1: 3.3V必须接, TX/RX交叉 |
 | F2.9 | 机器狗固件开发 | ✅ | 2026-07-06 | bread-compact-wifi + 4路舵机 + 3路触摸 + SH1106 OLED |
 | F2.10 | 服务端机器狗适配 | ✅ | 2026-07-06 | prompt切换 + /ota命令 + IP迁移 |
 | F2.11 | ZZPET 固件逆向 | ✅ | 2026-07-06 | 提取 7.6MB flash → 分区解析 + 字符串分析 + Ghidra 准备 |
+| F2.12 | MCP 工具完善 | ✅ | 2026-07-07 | 3→6工具，增量模式，归位，急停，安全锁 |
+| F2.13 | LLM 直控机械臂 | ✅ | 2026-07-08 | 关键词路由移除，deepseek-v4-flash直调MCP工具 |
+| F2.14 | 多步指令支持 | ✅ | 2026-07-08 | "X 然后 Y 两秒后 Z" → 自动拆分顺序执行 |
+| F2.15 | USB 摄像头模块 | ✅ | 2026-07-08 | camera_usb.py: opencv抓图→base64→LLM看图 |
+| F2.16 | IO3 触摸交互 | ✅ | 2026-07-08 | 摸头传感器 + 14种轮换提示词 + LLM动作回应 |
+| F2.17 | 静音/安全/超时 | ✅ | 2026-07-08 | TTS关闭、安全区域锁、文字超时15s→60s、排队修复 |
 | F3.1 | smolVLA 环境搭建 | 🔲 | — | 需 GPU |
 | F3.2 | FastAPI VLA 推理服务 | 🔲 | — | stub 已就绪，待 GPU |
 | F3.3 | 模型权重下载 + 测试 | 🔲 | — | 需 GPU |
 | F3.5 | VLA 链路测试 | 🔲 | — | 依赖硬件 + GPU |
-| F4.1 | LLM 意图解析 | 🔲 | — | |
-| F4.2 | 多轮交互 | 🔲 | — | |
-| F4.4 | 时延优化 | 🔲 | — | |
+| F4.1 | LLM 多轮推理 | 🔲 | — | 单轮OK，多轮函数调用链未闭环 |
+| F4.2 | TTS 恢复 | 🔲 | — | EdgeTTS连不上，Linkerai 502 |
+| F4.4 | 时延优化 | 🔲 | — | deepseek-v4-flash 每次5-20s |
 | F4.5 | 多场景抓取测试 | 🔲 | — | |
 
 ---
@@ -309,6 +314,97 @@ ESP32          驱动板
 
 **提取**：完整分区 + Segments + 21805 字符串 → `zzpet_extracted/`
 **下一步**：Ghidra 12.1.2 + Xtensa LX7 反编译
+
+---
+
+### 2026-07-07~08：F2.12~F2.17 MCP全链路打通 ✅
+
+**背景**：Phase 2 核心目标——用户说一句话→机械臂执行动作。经过两天密集开发和踩坑，完整链路已通。
+
+**硬件层确认**：
+- ✅ SCServo 协议链路：ESP32 UART1(1Mbps) → Bus Servo Adapter → 6舵机全部在线
+- ✅ 接线方案：IO9(TX)→R, IO10(RX)→T, 3.3V→V, GND→G, 跳线帽断开
+- ✅ 启动时序修复：舵机比ESP32慢启动，EnsureTorqueEnabled()自动恢复扭矩
+
+**固件 MCP 工具**（`xiaozhi_custom_board.cc`）：
+- robot.arm.move_joints — 支持 relative 增量模式 + 安全区域锁
+- robot.arm.move_joint — 🆕 单关节控制
+- robot.arm.home — 🆕 一键归位
+- robot.arm.stop — 🆕 急停
+- robot.arm.gripper — 支持精确 position 参数
+- robot.arm.get_status — 增强：物理角度+归一化角度+扭矩+home偏移
+
+**安全约束**（固件+提示词双重保护）：
+- 固件安全锁：J2<15°→锁定J1旋转±15°，J3<20°→禁止J2下降
+- 提示词安全区：跳舞范围 [70-110, 20-120, 40-160, 80-170, 20-160]
+- 文字超时 15s→60s，连接中文字排队不丢弃
+
+**服务端关键修复**：
+1. `plugin_executor.py`: async 函数调用缺 await → 协程从未执行（根因排查最久）
+2. `mcp_handler.py`: has_tool() 不匹配净化名（robot.arm.gripper vs robot_arm_gripper）
+3. `move_arm.py`: 重构为增量式+多步指令+中文数字支持
+4. `intentHandler.py`: 静音模式 + ARM_KEYWORDS 移除
+5. TTS 全局关闭（`_TTS_ENABLED=False`）
+
+**LLM 直控**：
+- 模型：deepseek-v4-flash via 阿里百炼
+- MCP工具描述精简 ~70%
+- 所有指令交LLM推理，自行选择调用 move_arm 或直调 MCP 工具
+- LLM 可自由编排多步动作序列（通过 move_arm 的多步指令）
+
+**当前限制**：
+- LLM 多轮函数调用未闭环（只能单轮规划→move_arm 多步执行）
+- TTS 不可用（EdgeTTS 连不上，Linkerai 502），暂时静音
+- LLM 每次推理 5-20s，复杂指令可能超时
+
+**触动总结**：
+```
+用户: "跳个舞吧"
+  → ESP32 WebSocket → 本地服务器
+  → LLM(deepseek-v4-flash) 推理 5-10s
+  → 调 move_arm("归位然后抬起再左转20度再右转20度再点头…")
+  → 拆成9步顺序执行 → 机械臂跳舞
+  → 响应回ESP32 → idle
+```
+完整链路：**语音/文字 → LLM推理 → MCP工具 → SCServo → 舵机动作** ✅
+
+---
+
+### 2026-07-07：F2.12 MCP 工具完善 ✅
+
+**背景**：原有3个基础MCP工具（move_joints/gripper/get_status），功能单一：
+- move_joints 始终覆盖全部6关节，无法增量移动
+- 无归位/急停功能
+- get_status 返回信息不足
+- move_arm.py 硬编码未指定关节为90°，导致机械臂突然跳变
+
+**参考项目**：[IliaLarchenko/robot_MCP](https://github.com/IliaLarchenko/robot_MCP)（MCP+SO101）、[beam-bots/bb_so101](https://github.com/beam-bots/bb_so101)（STS3215完整协议）
+
+**固件端改动** (`xiaozhi_custom_board.cc`):
+- 🆕 `robot.arm.move_joint` — 单关节控制（joint+angle+speed）
+- 🆕 `robot.arm.home` — 一键归位到HOME步值 [2019,805,2979,2869,1082,2246]
+- 🆕 `robot.arm.stop` — 急停：释放6舵机扭矩
+- 🔧 `move_joints` — 新增 `relative` 参数支持增量模式（相对当前位置偏移）
+- 🔧 `gripper` — 新增 `position` 参数支持精确开度控制（二态开合仍然可用）
+- 🔧 `get_status` — 新增 `home_offset_steps`、`torque_enabled`、`physical_deg`、`angle` 字段
+- 🆕 `EnsureTorqueEnabled()` — 急停后自动恢复扭矩（move_joints/move_joint/home 自动调用）
+- 📝 所有工具描述加入关节索引和参考角度信息
+
+**服务端改动** (`move_arm.py`):
+- 🔧 `_get_current_angles()` — 调用 get_status 获取当前姿态
+- 🔧 `_parse_instruction()` → 增量式：只修改指定关节，其他关节保持当前值
+- 🆕 相对指令：「再高一点」→ +10°，「再低一点」→ -10°
+- 🆕 新增路由：归位→robot.arm.home, 急停→robot.arm.stop
+- 🆕 降级策略：get_status 失败时使用 HOME 参考角度
+
+**角色提示词** (`.config.yaml`):
+- 🆕 追加机械臂模式 prompt（注释状态），含增量控制说明和安全规则
+
+**验证**：
+- ✅ `bash esp_idf_build.sh build` 编译通过，0 错误
+- ⏭️ 硬件测试待进行（需烧录固件 → ESP32上线 → 测试各MCP工具）
+
+**下一步**：烧录固件 → 通过 arm_cli.py 或 text_console 测试新工具
 
 ---
 
