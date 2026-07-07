@@ -15,24 +15,14 @@
 // SCServo 直连夹爪测试函数
 static void scs_gripper(bool open) {
     uint16_t pos = open ? 2100 : 2400;  // 开/合位置（步值）
-    uint16_t speed = 150;
 
-    // 速度包: [0xFF,0xFF, ID, Len, WRITE, Addr, ValL, ValH, Cksum]
-    uint8_t spd[9] = {0xFF, 0xFF, 6, 5, 0x03, 46,
-                      (uint8_t)(speed & 0xFF), (uint8_t)((speed >> 8) & 0xFF), 0};
-    uint8_t sum = 0;
-    for (int i = 2; i < 8; i++) sum += spd[i];
-    spd[8] = ~sum;
-
-    // 位置包
+    // 只发位置包，不写速度（避免型号252控制表差异）
     uint8_t pos_pkt[9] = {0xFF, 0xFF, 6, 5, 0x03, 42,
                           (uint8_t)(pos & 0xFF), (uint8_t)((pos >> 8) & 0xFF), 0};
-    sum = 0;
+    uint8_t sum = 0;
     for (int i = 2; i < 8; i++) sum += pos_pkt[i];
     pos_pkt[8] = ~sum;
 
-    uart_write_bytes(UART_NUM_1, spd, 9);
-    esp_rom_delay_us(300);
     uart_write_bytes(UART_NUM_1, pos_pkt, 9);
     ESP_LOGI(TAG, "SCServo 夹爪: %s → %d", open ? "张开" : "闭合", pos);
 }
