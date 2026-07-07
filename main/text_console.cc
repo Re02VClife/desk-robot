@@ -1,5 +1,6 @@
 #include "text_console.h"
 #include "application.h"
+#include "settings.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -75,7 +76,24 @@ void TextConsole::Task(void* arg) {
                     printf("  直接输入文字 → 发送消息给小智\r\n");
                     printf("  /help → 显示帮助\r\n");
                     printf("  /quit → 退出文字模式\r\n");
+                    printf("  /ota <url> → 修改OTA地址\r\n");
                     printf("========================\r\n");
+                }
+                // OTA 地址设置（写入 NVS，重启生效）
+                else if (strncmp(buffer, "/ota ", 5) == 0) {
+                    std::string url(buffer + 5);
+                    // 去掉首尾空格
+                    while (!url.empty() && url.front() == ' ') url.erase(0, 1);
+                    while (!url.empty() && url.back() == ' ') url.pop_back();
+                    if (url.empty()) {
+                        printf("用法: /ota http://x.x.x.x:8000/xiaozhi/ota/\r\n");
+                    } else {
+                        Settings settings("wifi", true);
+                        settings.SetString("ota_url", url);
+                        printf("OTA 地址已保存: %s\r\n", url.c_str());
+                        printf("重启后生效!\r\n");
+                        ESP_LOGI(TAG, "OTA URL 已更新: %s", url.c_str());
+                    }
                 }
                 // 特殊命令: 退出
                 else if (strcmp(buffer, "/quit") == 0) {
