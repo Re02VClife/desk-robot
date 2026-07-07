@@ -4,11 +4,28 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_rom_sys.h>
 #include <cstring>
 #include <cstdio>
 #include <cctype>
+#include <driver/uart.h>
 
 #define TAG "TextConsole"
+
+// SCServo 直连夹爪测试函数
+static void scs_gripper(bool open) {
+    uint16_t pos = open ? 2100 : 2400;  // 开/合位置（步值）
+
+    // 只发位置包，不写速度（避免型号252控制表差异）
+    uint8_t pos_pkt[9] = {0xFF, 0xFF, 6, 5, 0x03, 42,
+                          (uint8_t)(pos & 0xFF), (uint8_t)((pos >> 8) & 0xFF), 0};
+    uint8_t sum = 0;
+    for (int i = 2; i < 8; i++) sum += pos_pkt[i];
+    pos_pkt[8] = ~sum;
+
+    uart_write_bytes(UART_NUM_1, pos_pkt, 9);
+    ESP_LOGI(TAG, "SCServo 夹爪: %s → %d", open ? "张开" : "闭合", pos);
+}
 
 void TextConsole::Start() {
     xTaskCreate(Task, "text_console", 4096, nullptr, 2, nullptr);
@@ -55,6 +72,22 @@ void TextConsole::Task(void* arg) {
                     ESP_LOGI(TAG, "退出文字控制台");
                     printf("已退出文字控制台。\r\n");
                 }
+                // SCServo 直连测试指令
+                else if (strcmp(buffer, "!GOPEN") == 0) {
+                    scs_gripper(true);
+                    printf("GRIPPER_OPEN\r\n");
+                }
+                else if (strcmp(buffer, "!GCLOSE") == 0) {
+                    scs_gripper(false);
+                    printf("GRIPPER_CLOSE\r\n");
+                }
+                // 串口透传：! 开头直接转发到机械臂 UART1（绕过全部链路）
+                else if (buffer[0] == '!') {
+                    std::string raw = std::string(buffer + 1) + "\n";
+                    uart_write_bytes(UART_NUM_1, raw.c_str(), raw.size());
+                    ESP_LOGI(TAG, "透传机械臂: %s", buffer + 1);
+                    printf("ROBOT_OK\r\n");
+                }
                 // 普通文字消息
                 else {
                     ESP_LOGI(TAG, "发送文字: %s", buffer);
@@ -75,8 +108,8 @@ void TextConsole::Task(void* arg) {
                 fflush(stdout);
             }
         }
-        else if (c >= 32 && c < 127) {
-            // 可打印字符
+        else if (c >= 32 && c != 127) {
+            // 可打印字符（接受 UTF-8 多字节编码）
             if (pos < kMaxLine - 1) {
                 buffer[pos++] = (char)c;
                 putchar(c);
