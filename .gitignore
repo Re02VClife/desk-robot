@@ -23,3 +23,4 @@ mmap_generate_*.h
 
 # Claude Code 本地私有配置（含机器专属权限规则，不入库）
 .claude/settings.local.json
+datasets/
