@@ -20,3 +20,6 @@ main/mmap_generate_emoji.h
 *.bin
 mmap_generate_*.h
 .clangd
+
+# Claude Code 本地私有配置（含机器专属权限规则，不入库）
+.claude/settings.local.json
