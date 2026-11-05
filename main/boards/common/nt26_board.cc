@@ -2,7 +2,9 @@
 #include "display.h"
 #include "application.h"
 #include "audio_codec.h"
+#include <esp_event.h>
 #include <esp_log.h>
+#include <esp_netif.h>
 #include <font_awesome.h>
 #include <cJSON.h>
 

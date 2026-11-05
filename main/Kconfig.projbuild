@@ -912,4 +912,12 @@ menu "TAIJIPAI_S3_CONFIG"
         启动双声道
 endmenu
 
+    config WEBSOCKET_URL_OVERRIDE
+        string "WebSocket 服务器地址覆盖"
+        default ""
+        help
+            覆盖 OTA 下发的 WebSocket 服务器地址。
+            留空则使用 OTA 服务器返回的地址。
+            示例: ws://192.168.1.100:8000/xiaozhi/v1/
+
 endmenu

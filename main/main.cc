@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 
 #include "application.h"
+#include "text_console.h"
 
 #define TAG "main"
 
@@ -21,6 +22,9 @@ extern "C" void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    // 启动文字控制台（串口输入），支持无麦克风场景下的文字对话
+    TextConsole::Start();
 
     // Initialize and run the application
     auto& app = Application::GetInstance();

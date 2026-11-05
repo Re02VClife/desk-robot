@@ -59,7 +59,12 @@ bool WebsocketProtocol::SendAudio(std::unique_ptr<AudioStreamPacket> packet) {
 
 bool WebsocketProtocol::SendText(const std::string& text) {
     if (websocket_ == nullptr || !websocket_->IsConnected()) {
-        return false;
+        // 自动建立 WebSocket 连接（不仅限于音频通道场景）
+        ESP_LOGI(TAG, "WebSocket 未连接，自动建立连接以发送文本");
+        if (!OpenAudioChannel()) {
+            ESP_LOGE(TAG, "自动连接失败，无法发送文本");
+            return false;
+        }
     }
 
     if (!websocket_->Send(text)) {
@@ -85,6 +90,13 @@ bool WebsocketProtocol::OpenAudioChannel() {
     std::string url = settings.GetString("url");
     std::string token = settings.GetString("token");
     int version = settings.GetInt("version");
+
+    // CONFIG_WEBSOCKET_URL_OVERRIDE 是 string 类型 Kconfig，空字符串表示未配置
+    if (strlen(CONFIG_WEBSOCKET_URL_OVERRIDE) > 0) {
+        url = CONFIG_WEBSOCKET_URL_OVERRIDE;
+        ESP_LOGI(TAG, "使用编译时指定的 WebSocket 地址: %s", url);
+    }
+
     if (version != 0) {
         version_ = version;
     }

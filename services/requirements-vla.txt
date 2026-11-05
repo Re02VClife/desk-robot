@@ -1,0 +1,24 @@
+# VLA 推理服务依赖
+# 安装: pip install -r services/requirements-vla.txt
+
+# Web 框架
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+
+# 图像处理
+Pillow>=10.0.0
+
+# HTTP 客户端（用于测试）
+httpx>=0.24.0
+
+# === 以下为真实 VLA 模型运行时依赖（部署 GPU 时取消注释）===
+
+# PyTorch (CUDA 版本，根据实际情况选择)
+# torch>=2.0.0
+# torchvision>=0.15.0
+
+# smolVLA（从 GitHub 安装）
+# git+https://github.com/ZhangYizhe/smolVLA.git
+
+# 备选：Octo-Base（CPU 可跑的备选模型）
+# git+https://github.com/rail-berkeley/octo.git

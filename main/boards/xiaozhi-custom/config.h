@@ -33,6 +33,7 @@
 #define BOOT_BUTTON_GPIO        GPIO_NUM_0
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_38
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_39
+#define TOUCH_BUTTON_GPIO       GPIO_NUM_3   // 触摸传感器（被摸头触发）
 
 // 显示 SPI 引脚（ST7789 240x320，使用 U7 主连接器）
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_42
@@ -71,5 +72,14 @@
 #define BATTERY_ADC_CHANNEL    ADC_CHANNEL_1
 #define BATTERY_UPPER_RESISTOR 100000.0f
 #define BATTERY_LOWER_RESISTOR 100000.0f
+
+// ========== 机械臂 UART1 配置 ==========
+// UART1 直连 SO101 舵机总线（SCServo 二进制协议，1M bps）
+// TX=IO9 -> 舵机总线, RX=IO10 <- 舵机总线
+#define ROBOT_ARM_UART_PORT       UART_NUM_1
+#define ROBOT_ARM_UART_TXD_PIN    GPIO_NUM_9
+#define ROBOT_ARM_UART_RXD_PIN    GPIO_NUM_10
+#define ROBOT_ARM_UART_BAUD_RATE  1000000
+#define ROBOT_ARM_UART_BUF_SIZE   256
 
 #endif // _BOARD_CONFIG_H_
