@@ -1,47 +1,32 @@
 #include "wifi_board.h"
 #include "dog_robot.h"
+
 #include <esp_log.h>
+#include <memory>
 
 #define TAG "DogRobotBoard"
 
+// 四个 SG90 舵机（见 boards/dog-robot/README.md 的接线表）
+static constexpr int kServoFrontLeft = 12;
+static constexpr int kServoFrontRight = 13;
+static constexpr int kServoBackLeft = 14;
+static constexpr int kServoBackRight = 15;
+
 class DogRobotBoard : public WifiBoard {
 public:
-    DogRobotBoard() : WifiBoard() {
-        dog_robot_ = std::make_unique<DogRobot>();
-    }
-    
-    ~DogRobotBoard() override {
-    }
-    
-    void Initialize() override {
-        WifiBoard::Initialize();
-        
-        // 初始化机器狗舵机
-        // 这里使用默认引脚，实际使用时需要根据硬件连接修改
-        int front_left = 12;   // 前左腿舵机
-        int front_right = 13;  // 前右腿舵机
-        int back_left = 14;    // 后左腿舵机
-        int back_right = 15;   // 后右腿舵机
-        
-        dog_robot_->Initialize(front_left, front_right, back_left, back_right);
-        
-        // 初始化MCP工具
+    // 板级初始化统一放在构造函数里：Board 没有虚的 Initialize()，
+    // 上层只会调 Board::GetInstance()，构造函数是唯一一定会执行的地方。
+    DogRobotBoard() : dog_robot_(std::make_unique<DogRobot>()) {
+        ESP_LOGI(TAG, "Initializing DogRobotBoard");
+        dog_robot_->Initialize(kServoFrontLeft, kServoFrontRight, kServoBackLeft, kServoBackRight);
         dog_robot_->InitializeTools();
-        
-        ESP_LOGI(TAG, "Dog robot board initialized");
+        ESP_LOGI(TAG, "DogRobotBoard initialized");
     }
-    
-    std::string GetBoardName() const override {
-        return "dog-robot";
-    }
-    
-    std::string GetDeviceType() const override {
-        return "dog_robot";
-    }
-    
+
+    virtual std::string GetBoardType() override { return "dog-robot"; }
+
 private:
     std::unique_ptr<DogRobot> dog_robot_;
 };
 
-// 注册板型
-BOARD_REGISTER(DogRobotBoard, dog_robot);
+DECLARE_BOARD(DogRobotBoard);
