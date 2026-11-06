@@ -1,0 +1,9 @@
+{
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "dog-robot",
+            "sdkconfig_append": []
+        }
+    ]
+}

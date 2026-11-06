@@ -98,13 +98,27 @@ private:
         });
 
         volume_up_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            app.SetVolume(app.GetVolume() + 10);
+            auto codec = GetAudioCodec();
+            if (codec == nullptr) {
+                return;
+            }
+            auto volume = codec->output_volume() + 10;
+            if (volume > 100) {
+                volume = 100;
+            }
+            codec->SetOutputVolume(volume);
         });
 
         volume_down_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            app.SetVolume(app.GetVolume() - 10);
+            auto codec = GetAudioCodec();
+            if (codec == nullptr) {
+                return;
+            }
+            auto volume = codec->output_volume() - 10;
+            if (volume < 0) {
+                volume = 0;
+            }
+            codec->SetOutputVolume(volume);
         });
     }
 
