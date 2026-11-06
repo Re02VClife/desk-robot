@@ -61,7 +61,10 @@ void DogRobot::SetTrim(int front_left, int front_right, int back_left, int back_
 }
 
 void DogRobot::MoveServos(int time, int servo_target[]) {
-    float increment[SERVO_COUNT];
+    if (time <= 0) {
+        time = 10;  // 后面的 time/10.0 会除零
+    }
+    float increment[SERVO_COUNT] = {0};
     
     // 计算每个舵机的增量
     for (int i = 0; i < SERVO_COUNT; i++) {
