@@ -2,6 +2,8 @@
 #include "board.h"
 #include "mcp_server.h"
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #define TAG "DogRobot"
 

@@ -1,11 +1,5 @@
-#include "board.h"
-#include "dog_robot.h"
 #include "wifi_board.h"
-#include "audio_codec.h"
-#include "display.h"
-#include "oled_display.h"
-#include "led.h"
-#include "backlight.h"
+#include "dog_robot.h"
 #include <esp_log.h>
 
 #define TAG "DogRobotBoard"

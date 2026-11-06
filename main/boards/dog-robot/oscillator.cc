@@ -17,7 +17,10 @@ namespace {
 constexpr ledc_mode_t kServoMode = LEDC_LOW_SPEED_MODE;
 constexpr ledc_timer_t kServoTimer = LEDC_TIMER_0;
 constexpr int kServoFreqHz = 50;
-constexpr uint32_t kDutyMax = (1u << 16);
+// 14 bit 是所有 ESP32 变体都支持的分辨率（v5.5.2 的 ledc_types.h 里没有 16 bit）。
+// 50Hz 由 LEDC 的分频器达成，与位深无关。
+constexpr ledc_timer_bit_t kServoDutyBits = LEDC_TIMER_14_BIT;
+constexpr uint32_t kDutyMax = (1u << 14);
 
 bool g_timer_configured = false;
 int g_next_channel = 0;
@@ -38,7 +41,7 @@ void Oscillator::Attach(int pin) {
     if (!g_timer_configured) {
         ledc_timer_config_t timer_config = {};
         timer_config.speed_mode = kServoMode;
-        timer_config.duty_resolution = LEDC_TIMER_16_BIT;
+        timer_config.duty_resolution = kServoDutyBits;
         timer_config.timer_num = kServoTimer;
         timer_config.freq_hz = kServoFreqHz;  // 舵机标准频率
         timer_config.clk_cfg = LEDC_AUTO_CLK;
